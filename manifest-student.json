@@ -1,6 +1,8 @@
 {
+ "id": "./student.html",
  "name": "空き時間登録",
  "short_name": "空き時間",
+ "scope": "./",
  "display": "standalone",
  "background_color": "#F4F6F8",
  "theme_color": "#1F6FB2",

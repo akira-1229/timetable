@@ -101,3 +101,44 @@ if (DEMO && typeof document !== "undefined") {
     `<div class="noprint" style="background:#FDF5D6;color:#5A4500;font-size:12px;text-align:center;padding:6px 10px;border-bottom:1px solid #E5C04A">デモモード：見本データで動いています。入力した内容はこの端末の中だけに保存されます。 <a href="./index.html" style="color:#5A4500;font-weight:700">デモの入口へ</a></div>`);
   document.body ? put() : document.addEventListener("DOMContentLoaded", put);
 }
+
+/* ---------- ホーム画面に追加（Webアプリとして使う） ---------- */
+// QRから初めて開いた時に、ホーム画面への追加方法を1回だけ案内する。その後は「ホーム画面に追加」ボタンから開ける
+// Android（Chrome）はボタン1つで追加できる。iPhoneは共有ボタンからの手順を案内する
+let installEvt = null;
+if (typeof window !== "undefined") {
+  addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; });
+  addEventListener("appinstalled", () => { installEvt = null; closeSheet(); toast("ホーム画面に追加しました"); });
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("./firebase-messaging-sw.js", { scope: "./" }).catch(() => { });
+}
+export const canInstall = () => !isStandalone();
+export const installButton = () => canInstall() ? `<button class="linkbtn" data-act="install">ホーム画面に追加</button>` : "";
+export function installSheet(kind) {
+  const what = kind === "student" ? "空き時間の登録" : "予約の割り当て";
+  const after = kind === "student"
+    ? "追加したアイコンから開くと、次からはQRコードを読み取らなくても、すぐに自分の画面が開きます。"
+    : "追加したアイコンから開くと、次からはQRコードを読み取らなくても、すぐに指導員の画面が開きます。";
+  let how;
+  if (installEvt) how = `<button class="btn primary full" data-act="installNow">ホーム画面に追加する</button>`;
+  else if (isIOS()) how = `<ol style="padding-left:20px;margin:0 0 6px;font-size:14px;line-height:1.8"><li>Safariの画面下にある <b>共有ボタン</b>（四角から矢印が出ているマーク）をタップ</li><li>メニューの中の <b>「ホーム画面に追加」</b> をタップ</li><li>右上の <b>「追加」</b> をタップ</li></ol>
+    <p style="font-size:13px;color:var(--muted);margin:0">iPhoneでは、ホーム画面に追加したアイコンから開いた時だけ、プッシュ通知を受け取れます。</p>`;
+  else how = `<p style="font-size:14px">ブラウザのメニュー（右上の︙）から <b>「ホーム画面に追加」</b> または <b>「アプリをインストール」</b> を選んでください。</p>`;
+  sheet(`<h3>ホーム画面に追加しましょう</h3><p style="font-size:14px">この画面を、アプリのようにホーム画面から開けるようになります（${what}）。${after}</p>
+    ${how}<button class="btn full" style="margin-top:10px" data-act="close">あとで</button>`);
+}
+// 初めて開いた時だけ自動で案内する（ホーム画面から開いている時、デモの並べて確認ページの中では出さない）
+export function firstVisitInstall(kind) {
+  if (!canInstall() || window.top !== window) return;
+  const key = `timetable_install_shown_${kind}`;
+  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, "1"); } catch (e) { return; }
+  setTimeout(() => { if (!document.querySelector("#overlay .sheet")) installSheet(kind); }, 1200);
+}
+if (typeof document !== "undefined") document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-act]"); if (!t) return;
+  if (t.dataset.act === "install") installSheet(document.body.dataset.app || "student");
+  else if (t.dataset.act === "installNow" && installEvt) {
+    const ev = installEvt; installEvt = null;
+    await ev.prompt(); const r = await ev.userChoice.catch(() => null);
+    if (!r || r.outcome !== "accepted") installSheet(document.body.dataset.app || "student");
+  }
+});

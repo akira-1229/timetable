@@ -14,6 +14,7 @@ function newToken() {
   return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 const studentUrl = tok => `${CFG.appUrl}student.html?t=${encodeURIComponent(tok)}`;
+const instructorUrl = i => `${CFG.appUrl}instructor.html${i.email ? `?e=${encodeURIComponent(i.email)}` : ""}`;
 const iname = uid => (S.instructors.find(i => i.uid === uid) || {}).name || "（未設定）";
 
 function renderLogin(msg = "") {
@@ -69,7 +70,10 @@ function renderInstructors() {
   h += `</div><h3>指導員を登録</h3>
   <div class="field"><label for="iu">ユーザーUID</label><input id="iu"></div>
   <div class="row"><div class="field"><label for="in">名前</label><input id="in"></div><div class="field"><label for="ie">メールアドレス</label><input id="ie" type="email"></div></div>
-  <button class="btn primary full" data-act="addInst">登録する</button></div></section>`;
+  <button class="btn primary full" data-act="addInst">登録する</button>
+  <h3>指導員用のQRカード</h3><p style="font-size:13px;color:var(--muted);margin-top:0">読み取ると指導員の画面（ログイン画面）が開きます。メールアドレスは入力済みの状態で開きます。</p>
+  <button class="btn full" data-act="printInst" ${S.instructors.length ? "" : "disabled"}>指導員用のQRカードを印刷（${S.instructors.length}人）</button></div></section>`;
+  h += `<div id="printArea"></div>`;
   return h;
 }
 
@@ -98,6 +102,18 @@ async function deleteStudent(tok) {
   await batch.commit();
 }
 
+function printInstructorCards() {
+  const area = document.getElementById("printArea");
+  area.innerHTML = `<div class="noprint banner info" style="margin-top:12px">カードを確認して、印刷画面から印刷してください。<button class="btn" data-act="doPrint" style="margin-left:8px">印刷する</button></div>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">${S.instructors.map(i => `
+  <div style="border:1.5px dashed #9AA3AE;border-radius:10px;padding:12px;display:flex;gap:12px;align-items:center;break-inside:avoid;background:#fff;color:#1F2A37">
+    <div class="qr" data-url="${esc(instructorUrl(i))}" style="width:120px;height:120px;flex-shrink:0"></div>
+    <div style="font-size:12px;line-height:1.5"><b style="font-size:14px">${esc(i.name)} 指導員</b><br>予約の割り当てはこちら<br>① スマホのカメラで読み取る<br>② ホーム画面に追加<br>③ ログインして「通知」をオン<br><span style="color:#4B5563">${esc(CFG.schoolName)}</span></div>
+  </div>`).join("")}</div>`;
+  area.querySelectorAll(".qr").forEach(el => new QRCode(el, { text: el.dataset.url, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M }));
+  area.scrollIntoView({ behavior: "smooth" });
+}
+
 function printCards() {
   const list = S.students.filter(s => S.sel.has(s.token));
   const area = document.getElementById("printArea");
@@ -122,6 +138,7 @@ document.addEventListener("click", async e => {
     else if (a === "logout") await signOut(auth);
     else if (a === "tab") { S.tab = t.dataset.v; render(); }
     else if (a === "new") editSheet(null);
+    else if (a === "printInst") printInstructorCards();
     else if (a === "edit") editSheet(S.students.find(s => s.token === t.dataset.s));
     else if (a === "selAll") { document.querySelectorAll('[data-act="sel"]').forEach(c => S.sel.add(c.dataset.s)); render(); }
     else if (a === "print") { printCards(); }

@@ -4,7 +4,8 @@ import {
 } from "./backend.js";
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
-  onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground
+  onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
+  installButton, firstVisitInstall
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -36,7 +37,7 @@ async function load() {
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
     S.mi = nextMonthFilled() ? 0 : 1;
     render();
-    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); }
+    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); firstVisitInstall("student"); }
   } catch (e) { fail(friendlyError(e)); }
 }
 // 指導員が予約を確定・取り消しした時や、通知を送った時に、開いたままの画面にもすぐ反映する
@@ -64,7 +65,7 @@ function unacked() {
 function render() {
   const st = S.student;
   let h = `<div class="topbar"><div><h1>${esc(CFG.schoolName)}</h1><small>${esc(st.name)} さん</small></div>
-    <button class="linkbtn" data-act="push">通知の設定</button></div>
+    <span>${installButton()}<button class="linkbtn" data-act="push">通知の設定</button></span></div>
   <section class="panel"><div class="tabs" role="tablist">
     <button role="tab" aria-selected="${S.tab === "cal"}" data-act="tab" data-v="cal">空き時間</button>
     <button role="tab" aria-selected="${S.tab === "book"}" data-act="tab" data-v="book">予約${unacked() ? '<span class="dot">!</span>' : ""}</button>
