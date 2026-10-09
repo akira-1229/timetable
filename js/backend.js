@@ -18,3 +18,4 @@ export const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut 
 export const { getMessaging, getToken, isSupported, onMessage } = msgMod;
 export const resetDemo = demo ? demo.resetDemo : () => { };
 export const DEMO_USERS = demo ? demo.DEMO_USERS : {};
+export const DEMO_STUDENTS = demo ? demo.DEMO_STUDENTS : [];

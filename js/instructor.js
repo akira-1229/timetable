@@ -24,20 +24,21 @@ const dayMax = s => CFG.dailyMax[s.stage] || 2;
 /* ---------- ログイン ---------- */
 function renderLogin(msg = "") {
   root.innerHTML = `<section class="panel"><div class="phead"><div><h2>職員ログイン</h2><small>${esc(CFG.schoolName)} 指導員用</small></div></div>
-  <div class="body">${DEMO ? `<div class="banner info">デモ用のログイン：指導員：<b>yamada@demo</b> または <b>sato@demo</b>（パスワードは何でもOK）</div>` : ""}<form id="lf" onsubmit="return false">
+  <div class="body">${DEMO ? `<div class="banner info">デモ用のログイン：指導員：<b>kumazaki@demo</b>（熊崎）または <b>toyama@demo</b>（遠山）（パスワードは何でもOK）</div>` : ""}<form id="lf" onsubmit="return false">
   <div class="field"><label for="em">メールアドレス</label><input id="em" type="email" autocomplete="username" required></div>
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password" required></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}
   <button class="btn accent full" data-act="login">ログイン</button></form></div></section>`;
 }
 onAuthStateChanged(auth, async user => {
-  if (!user) { stopWatch(); S.uid = null; renderLogin(); return; }
+  if (!user) { stopWatch(); stopCancelWatch(); S.uid = null; renderLogin(); return; }
   S.uid = user.uid;
   try {
     const me = await getDoc(doc(db, "instructors", user.uid));
     if (!me.exists()) { await signOut(auth); renderLogin("指導員として登録されていません。事務所に確認してください。"); return; }
     S.me = me.data();
     listenForeground(() => loadWeek());
+    watchCancelReqs();
     await loadWeek();
   } catch (e) { renderLogin(friendlyError(e)); }
 });
@@ -75,10 +76,26 @@ function watchAvail(yms) {
       lateM[s.token] = { ...lateM[s.token], [ym]: !!(m.exists() && m.data().late) };
       S.late[s.token] = Object.values(lateM[s.token]).some(Boolean);
       if (first) { first = false; resolve(); }
-      else if (!S.loading) { clearTimeout(renderTimer); renderTimer = setTimeout(render, 300); }
+      else laterRender();
     }, e => { if (first) { first = false; resolve(); } toast(friendlyError(e)); }));
   }))));
 }
+const laterRender = () => { if (S.loading) return; clearTimeout(renderTimer); renderTimer = setTimeout(render, 300); };
+// 教習生からのキャンセル希望も、届いたらすぐ表示する
+let unwatchCR = null;
+const stopCancelWatch = () => { if (unwatchCR) unwatchCR(); unwatchCR = null; };
+function watchCancelReqs() {
+  stopCancelWatch();
+  const cq = query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("cancelRequested", "==", true));
+  unwatchCR = onSnapshot(cq, r => {
+    S.cancelReqs = r.docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() })).filter(b => b.status === "confirmed");
+    const ids = new Set(S.cancelReqs.map(b => b.id));
+    S.bookings.forEach(b => { b.cancelRequested = ids.has(b.id); });
+    laterRender();
+  }, e => toast(friendlyError(e)));
+}
+// 未確定の予約のうち、あとから教習生が◯を外した枠（締切前なら外せるため）
+const goneDraft = b => b.status === "draft" && !isFree(b.token, b.date, b.period);
 
 /* ---------- 判定 ---------- */
 const bookAt = (ds, p) => S.bookings.find(b => b.date === ds && b.period === p);
@@ -156,6 +173,8 @@ function render() {
   if (S.loading) { root.innerHTML = h + `<div class="loading">読み込み中…</div>`; return; }
   h += `<section class="panel"><div class="phead"><div><h2>割り当て</h2><small>マス目をタップして教習生を入れます</small></div>
     ${S.confirmed ? '<span class="tag ok">確定済み</span>' : '<span class="tag draft">未確定</span>'}</div><div class="body">`;
+  const gones = S.bookings.filter(goneDraft);
+  if (gones.length) h += `<div class="banner warn"><b>教習生が◯を外した未確定の予約が${gones.length}件あります</b>（赤い枠）。取り消すか、教習生に確認してください。</div>`;
   if (S.cancelReqs.length) {
     h += `<div class="banner warn"><b>キャンセル希望が${S.cancelReqs.length}件あります</b>`;
     S.cancelReqs.forEach(b => {
@@ -190,7 +209,8 @@ function render() {
       const b = bookAt(d, p); const lb = label(d, p);
       if (b) {
         const s = ST(b.token);
-        h += `<td><button class="wc bk ${b.status === "draft" ? "draft" : ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(s ? s.name : "")}">${esc(s ? shortName(s) : "?")}<small>${b.cancelRequested ? "キャンセル希望" : b.lessonType === "kiken" ? KK().label : b.highway ? "高速" : b.status === "draft" ? "未確定" : "通知済み"}</small></button></td>`;
+        const gone = goneDraft(b);
+        h += `<td><button class="wc bk ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(s ? s.name : "")}${gone ? " 教習生が空き時間を取り消しました" : ""}">${esc(s ? shortName(s) : "?")}<small>${gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType === "kiken" ? KK().label : b.highway ? "高速" : b.status === "draft" ? "未確定" : "通知済み"}</small></button></td>`;
       } else if (pk && S.kiken) {
         const ok = evaluatePair(pk, d, p).ok;
         h += `<td><button class="wc ${ok ? "cand kk" : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}"` : "disabled"} aria-label="${lb}${ok ? `から${KK().label}で割り当て可` : ""}">${ok ? `${p}・${p + 1}<small>${KK().label}</small>` : ""}</button></td>`;
@@ -385,7 +405,7 @@ document.addEventListener("click", async e => {
       t.disabled = true;
       try { await signInWithEmailAndPassword(auth, em, pw); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); }
     }
-    else if (a === "logout") { stopWatch(); await signOut(auth); }
+    else if (a === "logout") { stopWatch(); stopCancelWatch(); await signOut(auth); }
     else if (a === "reload") { await loadWeek(); }
     else if (a === "wk") { S.week = addDays(S.week, +t.dataset.v); S.pick = null; await loadWeek(); }
     else if (a === "mode") { S.mode = t.dataset.v; if (S.mode === "slot") S.pick = null; render(); }

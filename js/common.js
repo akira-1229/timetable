@@ -3,7 +3,7 @@ import { initializeApp } from "./backend.js";
 import { getFirestore } from "./backend.js";
 import { getMessaging, getToken, isSupported, onMessage } from "./backend.js";
 
-export { DEMO, DEMO_USERS, resetDemo } from "./backend.js";
+export { DEMO, DEMO_USERS, DEMO_STUDENTS, resetDemo } from "./backend.js";
 import { DEMO } from "./backend.js";
 export const CFG = self.APP_CONFIG;
 export const app = initializeApp(CFG.firebase);

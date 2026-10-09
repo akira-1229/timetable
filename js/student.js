@@ -1,6 +1,6 @@
 // 教習生の画面：空き時間の登録、予約の確認、キャンセル希望、通知の設定
 import {
-  doc, getDoc, setDoc, updateDoc, addDoc, collection, query, where, getDocs, serverTimestamp
+  doc, getDoc, setDoc, updateDoc, addDoc, collection, query, where, getDocs, serverTimestamp, onSnapshot
 } from "./backend.js";
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
@@ -19,7 +19,7 @@ const MONTHS = [
   { y: now.getFullYear(), m: now.getMonth() + 1 },
   { y: new Date(now.getFullYear(), now.getMonth() + 1, 1).getFullYear(), m: new Date(now.getFullYear(), now.getMonth() + 1, 1).getMonth() + 1 }
 ];
-const S = { tab: "cal", mi: 1, student: null, avail: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set() };
+const S = { tab: "cal", mi: 1, student: null, avail: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set(), addedNow: {} };
 
 async function load() {
   if (!T) return fail("QRコードから開いてください。QRコードが手元にない場合は、事務所にお問い合わせください。");
@@ -36,14 +36,25 @@ async function load() {
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
     S.mi = nextMonthFilled() ? 0 : 1;
     render();
-    listenForeground(() => load());
+    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); }
   } catch (e) { fail(friendlyError(e)); }
+}
+// 指導員が予約を確定・取り消しした時や、通知を送った時に、開いたままの画面にもすぐ反映する
+let watching = false;
+function watch(bq) {
+  onSnapshot(bq, r => { S.bookings = r.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => { });
+  onSnapshot(doc(db, "students", T), d => { if (d.exists()) { S.student = d.data(); render(); } }, () => { });
 }
 function fail(msg) { app.innerHTML = `<div class="err">${esc(msg)}</div>`; }
 
 const nextYm = () => ymOf(MONTHS[1].y, MONTHS[1].m);
 const nextMonthFilled = () => (S.avail[nextYm()] || new Set()).size > 0;
 const isLate = ym => ym === nextYm() && now.getDate() > CFG.deadlineDay;
+// 締切（前の月の deadlineDay）を過ぎた月は◯を外せない。今月は常に締切後、来月は deadlineDay を過ぎたら
+const pastDeadline = ym => ym !== nextYm() || now.getDate() > CFG.deadlineDay;
+// この画面を開いてから付けた◯は、締切後でも付け間違いとして外せる
+const addSlot = (ym, k) => { if (!S.avail[ym].has(k)) { S.avail[ym].add(k); (S.addedNow[ym] = S.addedNow[ym] || new Set()).add(k); } };
+const canRemove = (ym, k) => !CFG.noRemoveAfterDeadline || !pastDeadline(ym) || (S.addedNow[ym] && S.addedNow[ym].has(k));
 function confirmedAt(ds, p) { return S.bookings.find(b => b.status === "confirmed" && b.date === ds && b.period === p); }
 function unacked() {
   const n = S.student.lastNotifiedAt, a = S.student.ackAt;
@@ -62,16 +73,19 @@ function render() {
   app.innerHTML = h + `</div></section>`;
 }
 
+const lockedNote = () => CFG.noRemoveAfterDeadline
+  ? "締切を過ぎているため、◯を付けることはできますが、外すことはできません。都合が悪くなった場合は学園にお電話ください。"
+  : "予約が入っていない枠は変更できます。";
 function renderCal() {
   const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const set = S.avail[ym];
   const nm = MONTHS[1];
   let h = "";
   if (S.mi === 1) {
     h += nextMonthFilled()
-      ? `<div class="banner ok">${nm.m}月分は入力済みです。${now.getDate() <= CFG.deadlineDay ? `締切の${MONTHS[0].m}月${CFG.deadlineDay}日までは何度でも変更できます。` : "予約が入っていない枠は変更できます。"}</div>`
+      ? `<div class="banner ok">${nm.m}月分は入力済みです。${now.getDate() <= CFG.deadlineDay ? `締切の${MONTHS[0].m}月${CFG.deadlineDay}日までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}` : lockedNote()}</div>`
       : `<div class="banner warn"><b>${nm.m}月分の入力締切は${MONTHS[0].m}月${CFG.deadlineDay}日です。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
   } else {
-    h += `<div class="banner info">予約が入っていない枠は、いつでも変更できます。タップするとすぐ保存されます。</div>`;
+    h += `<div class="banner info">${lockedNote()}タップするとすぐ保存されます。</div>`;
   }
   h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   h += `<div class="gridwrap"><table class="cal"><thead><tr><th></th>`;
@@ -130,6 +144,12 @@ function scheduleSave(ym) {
   }, 700);
 }
 
+function removeLockedSheet(ym, d, p) {
+  const [y, m] = ym.split("-").map(Number);
+  sheet(`<h3>この◯は外せません</h3><p>${label(dateStr(new Date(y, m - 1, d)), p)}<br><span style="color:var(--muted);font-size:13px">締切を過ぎているため、すでに付いている◯は外せません（指導員が予約を組んでいる途中のためです）。都合が悪くなった場合は学園にお電話ください。</span></p>
+    <div class="list"><a class="btn accent full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`);
+}
+
 /* ---------- 操作 ---------- */
 function bulkSheet() {
   let h = `<h3>曜日でまとめて選ぶ（${MONTHS[S.mi].m}月）</h3><div style="font-size:13px;font-weight:700;margin-bottom:6px">曜日</div><div class="chips">`;
@@ -148,7 +168,12 @@ document.addEventListener("click", async e => {
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
   else if (a === "toggle") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const k = slotKey(+t.dataset.d, +t.dataset.p);
-    S.avail[ym].has(k) ? S.avail[ym].delete(k) : S.avail[ym].add(k);
+    if (S.avail[ym].has(k)) {
+      if (!canRemove(ym, k)) return removeLockedSheet(ym, +t.dataset.d, +t.dataset.p);
+      S.avail[ym].delete(k);
+    } else {
+      addSlot(ym, k);
+    }
     render(); scheduleSave(ym);
   }
   else if (a === "copy") {
@@ -161,7 +186,7 @@ document.addEventListener("click", async e => {
     const ym = ymOf(nx.y, nx.m); let n = 0;
     for (let d = 1; d <= daysIn(nx.y, nx.m); d++) {
       const w = new Date(nx.y, nx.m - 1, d).getDay();
-      Object.entries(pat[w] || {}).forEach(([p, c]) => { if (c >= 2) { S.avail[ym].add(slotKey(d, +p)); n++; } });
+      Object.entries(pat[w] || {}).forEach(([p, c]) => { if (c >= 2) { addSlot(ym, slotKey(d, +p)); n++; } });
     }
     render(); scheduleSave(ym); toast(n ? "今月と同じ曜日・時限に◯を付けました" : "今月の入力が少ないため、写せる予定がありませんでした");
   }
@@ -171,7 +196,7 @@ document.addEventListener("click", async e => {
   else if (a === "bulkApply") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); let n = 0;
     for (let d = 1; d <= daysIn(y, m); d++) if (S.bulkW.has(new Date(y, m - 1, d).getDay())) S.bulkP.forEach(p => {
-      const ds = dateStr(new Date(y, m - 1, d)); if (!confirmedAt(ds, p)) { S.avail[ym].add(slotKey(d, p)); n++; }
+      const ds = dateStr(new Date(y, m - 1, d)); if (!confirmedAt(ds, p)) { addSlot(ym, slotKey(d, p)); n++; }
     });
     closeSheet(); render(); if (n) scheduleSave(ym); toast(n ? `${n}枠に◯を付けました` : "曜日と時限を選んでください");
   }

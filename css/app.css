@@ -114,6 +114,7 @@ table.wk{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fix
 .heatleg i{width:14px;height:14px;border-radius:4px;display:inline-block;border:1.5px solid}
 .wc.bk{background:var(--orange);border-color:var(--orange);color:#fff}
 .wc.bk.draft{background:var(--orange-soft);color:var(--lock)}
+.wc.bk.gone{background:var(--lv3-soft);border-color:var(--lv3);color:var(--lv3)}
 .wc.cand{background:var(--blue);border-color:var(--blue);color:#fff}
 .wc.off{opacity:.35}
 .wc small{display:block;font-weight:400;font-size:10px}

@@ -3,7 +3,7 @@
 // ・見本データ入り。このブラウザの中だけに保存される（他の端末とは共有されない）
 // ・config.js の demo を false にすると使われなくなる
 // =============================================================
-const KEY = "timetable_demo_db_v1";
+const KEY = "timetable_demo_db_v2";
 const SKEY = "timetable_demo_user";
 
 export class Timestamp {
@@ -27,39 +27,40 @@ export function resetDemo() { localStorage.removeItem(KEY); sessionStorage.remov
 /* ---------- 見本データ ---------- */
 export const DEMO_USERS = {
   "admin@demo": { uid: "DEMO_ADMIN", name: "管理者" },
-  "yamada@demo": { uid: "DEMO_T1", name: "山田" },
-  "sato@demo": { uid: "DEMO_T2", name: "佐藤" }
+  "kumazaki@demo": { uid: "DEMO_T1", name: "熊崎" },
+  "toyama@demo": { uid: "DEMO_T2", name: "遠山" }
 };
-const SUR = ["佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "山本", "中村", "小林", "加藤", "吉田", "山田", "佐々木", "山口", "松本", "井上", "木村", "林", "斎藤", "清水",
-  "山崎", "森", "池田", "橋本", "阿部", "石川", "山下", "中島", "石井", "小川", "前田", "岡田", "長谷川", "藤田", "後藤", "近藤", "村上", "遠藤", "青木", "坂本",
-  "斉藤", "福田", "太田", "西村", "藤井", "金子", "岡本", "藤原", "中野", "三浦", "原田", "中川", "松田", "竹内", "小野", "田村", "中山", "和田", "石田", "森田",
-  "上田", "原", "内田", "柴田", "酒井", "宮崎", "横山", "高木", "安藤", "宮本"];
-const GIV = ["蓮", "陽翔", "結衣", "葵", "大翔", "さくら", "湊", "美咲", "悠真", "凛", "颯", "陽菜", "樹", "芽依", "蒼", "莉子", "優斗", "彩花", "翔太", "ひなた"];
+// 教習生4人：demo-01・02 は熊崎指導員、demo-03・04 は遠山指導員の担当
+export const DEMO_STUDENTS = [
+  { tok: "demo-01", name: "山田", stage: 1, instructorUid: "DEMO_T1" },
+  { tok: "demo-02", name: "高井", stage: 2, instructorUid: "DEMO_T1" },
+  { tok: "demo-03", name: "島田", stage: 1, instructorUid: "DEMO_T2" },
+  { tok: "demo-04", name: "飯田", stage: 2, instructorUid: "DEMO_T2" }
+];
 const pad = n => String(n).padStart(2, "0");
 function seed() {
   let x = 20261001; const r = () => (x = (x * 9301 + 49297) % 233280) / 233280;
   DB.set("admins/DEMO_ADMIN", { note: "デモ管理者" });
-  DB.set("instructors/DEMO_T1", { name: "山田", email: "yamada@demo" });
-  DB.set("instructors/DEMO_T2", { name: "佐藤", email: "sato@demo" });
+  Object.values(DEMO_USERS).filter(u => u.uid !== "DEMO_ADMIN").forEach(u =>
+    DB.set(`instructors/${u.uid}`, { name: u.name, email: Object.keys(DEMO_USERS).find(k => DEMO_USERS[k] === u) }));
   const now = new Date(); const months = [0, 1].map(i => new Date(now.getFullYear(), now.getMonth() + i, 1));
-  for (let i = 0; i < 70; i++) {
-    const tok = `demo-${pad(i + 1)}`;
-    const dl = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 20 + Math.floor(r() * 150));
-    DB.set(`students/${tok}`, {
-      studentNo: `D${pad(i + 1)}`, name: `${SUR[i]} ${GIV[i % GIV.length]}`, stage: r() < 0.5 ? 1 : 2,
-      instructorUid: i < 35 ? "DEMO_T1" : "DEMO_T2", deadline: `${dl.getFullYear()}-${pad(dl.getMonth() + 1)}-${pad(dl.getDate())}`, active: true
+  DEMO_STUDENTS.forEach((st, i) => {
+    const dl = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30 + i * 25);
+    DB.set(`students/${st.tok}`, {
+      studentNo: `D${pad(i + 1)}`, name: st.name, stage: st.stage, instructorUid: st.instructorUid,
+      deadline: `${dl.getFullYear()}-${pad(dl.getMonth() + 1)}-${pad(dl.getDate())}`, active: true
     });
-    const evening = r() < 0.5;             // 平日は夕方以降しか来られない人
+    const evening = i % 2 === 1;           // 平日は夕方以降しか来られない人
     months.forEach((m, mi) => {
-      if (mi === 1 && r() < 0.3) return;    // 次月分がまだ未入力の人
+      if (mi === 1 && i === 3) return;     // 次月分がまだ未入力の人
       const slots = []; const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
       for (let d = 1; d <= days; d++) {
         const w = new Date(m.getFullYear(), m.getMonth(), d).getDay(); const weekday = w >= 1 && w <= 5;
-        for (let p = 1; p <= 10; p++) { const base = weekday && evening ? (p >= 7 ? 0.55 : 0.05) : 0.24; if (r() < base) slots.push(`${d}-${p}`); }
+        for (let p = 1; p <= 10; p++) { const base = weekday && evening ? (p >= 7 ? 0.6 : 0.05) : 0.35; if (r() < base) slots.push(`${d}-${p}`); }
       }
-      DB.set(`students/${tok}/months/${m.getFullYear()}-${pad(m.getMonth() + 1)}`, { slots, late: false });
+      DB.set(`students/${st.tok}/months/${m.getFullYear()}-${pad(m.getMonth() + 1)}`, { slots, late: false });
     });
-  }
+  });
 }
 if (!restore()) { seed(); persist(); }
 
@@ -83,8 +84,9 @@ export const serverTimestamp = () => Timestamp.now();
 export const arrayUnion = (...v) => ({ __union: v });
 const delay = () => new Promise(r => setTimeout(r, 60));
 export async function getDoc(r) { await delay(); return { id: r.id, ref: r, exists: () => DB.has(r.path), data: () => out(DB.get(r.path)) }; }
-export async function getDocs(q) {
-  await delay(); const res = [];
+export async function getDocs(q) { await delay(); return runQuery(q); }
+function runQuery(q) {
+  const res = [];
   for (const [p, d] of DB) {
     const seg = p.split("/");
     if (q.type === "col") { if (seg.slice(0, -1).join("/") !== q.path) continue; }
@@ -109,18 +111,20 @@ export function writeBatch() {
   };
 }
 
-/* ---------- リアルタイム更新のまね（ドキュメント1件の onSnapshot のみ） ---------- */
+/* ---------- リアルタイム更新のまね（onSnapshot。ドキュメント1件と一覧の両方） ---------- */
 // 同じタブでの書き込みに加えて、別のタブ（例：教習生の画面）での書き込みも storage イベントで拾う
 const subs = new Set();
-const snap = r => ({ id: r.id, ref: r, exists: () => DB.has(r.path), data: () => out(DB.get(r.path)) });
+const snap = r => r.type === "doc" ? { id: r.id, ref: r, exists: () => DB.has(r.path), data: () => out(DB.get(r.path)) } : runQuery(r);
+const state = r => r.type === "doc" ? JSON.stringify(enc(DB.get(r.path) ?? null))
+  : JSON.stringify(runQuery(r).docs.map(d => [d.ref.path, enc(DB.get(d.ref.path))]));
 function notify() {
   subs.forEach(x => {
-    const v = JSON.stringify(enc(DB.get(x.r.path) ?? null));
+    const v = state(x.r);
     if (v !== x.last) { x.last = v; setTimeout(() => subs.has(x) && x.cb(snap(x.r)), 0); }
   });
 }
 export function onSnapshot(r, cb) {
-  const x = { r, cb, last: JSON.stringify(enc(DB.get(r.path) ?? null)) };
+  const x = { r, cb, last: state(r) };
   subs.add(x); setTimeout(() => subs.has(x) && cb(snap(r)), 0);
   return () => subs.delete(x);
 }
