@@ -95,19 +95,36 @@ export async function getDocs(q) {
   return { docs: res, size: res.length, empty: !res.length };
 }
 const merge = (cur, d) => { const n = { ...cur }; Object.entries(d).forEach(([k, v]) => { n[k] = v && v.__union ? [...new Set([...(cur[k] || []), ...v.__union])] : v; }); return n; };
-export async function setDoc(r, d) { DB.set(r.path, merge({}, d)); persist(); }
-export async function updateDoc(r, d) { if (!DB.has(r.path)) throw Object.assign(new Error("not found"), { code: "not-found" }); DB.set(r.path, merge(DB.get(r.path), d)); persist(); }
-export async function addDoc(c, d) { const r = mkDoc(`${c.path}/${rid()}`); DB.set(r.path, merge({}, d)); persist(); return r; }
-export async function deleteDoc(r) { DB.delete(r.path); persist(); }
+export async function setDoc(r, d) { DB.set(r.path, merge({}, d)); persist(); notify(); }
+export async function updateDoc(r, d) { if (!DB.has(r.path)) throw Object.assign(new Error("not found"), { code: "not-found" }); DB.set(r.path, merge(DB.get(r.path), d)); persist(); notify(); }
+export async function addDoc(c, d) { const r = mkDoc(`${c.path}/${rid()}`); DB.set(r.path, merge({}, d)); persist(); notify(); return r; }
+export async function deleteDoc(r) { DB.delete(r.path); persist(); notify(); }
 export function writeBatch() {
   const ops = [];
   return {
     set: (r, d) => ops.push(() => DB.set(r.path, merge({}, d))),
     update: (r, d) => ops.push(() => DB.set(r.path, merge(DB.get(r.path) || {}, d))),
     delete: r => ops.push(() => DB.delete(r.path)),
-    commit: async () => { await delay(); ops.forEach(o => o()); persist(); }
+    commit: async () => { await delay(); ops.forEach(o => o()); persist(); notify(); }
   };
 }
+
+/* ---------- リアルタイム更新のまね（ドキュメント1件の onSnapshot のみ） ---------- */
+// 同じタブでの書き込みに加えて、別のタブ（例：教習生の画面）での書き込みも storage イベントで拾う
+const subs = new Set();
+const snap = r => ({ id: r.id, ref: r, exists: () => DB.has(r.path), data: () => out(DB.get(r.path)) });
+function notify() {
+  subs.forEach(x => {
+    const v = JSON.stringify(enc(DB.get(x.r.path) ?? null));
+    if (v !== x.last) { x.last = v; setTimeout(() => subs.has(x) && x.cb(snap(x.r)), 0); }
+  });
+}
+export function onSnapshot(r, cb) {
+  const x = { r, cb, last: JSON.stringify(enc(DB.get(r.path) ?? null)) };
+  subs.add(x); setTimeout(() => subs.has(x) && cb(snap(r)), 0);
+  return () => subs.delete(x);
+}
+try { addEventListener("storage", e => { if (e.key === KEY && restore()) notify(); }); } catch (e) { }
 
 /* ---------- ログインのまね ---------- */
 let cbs = [];

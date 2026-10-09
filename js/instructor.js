@@ -2,7 +2,7 @@
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "./backend.js";
 import {
   doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, collectionGroup, query, where, getDocs,
-  serverTimestamp, writeBatch, Timestamp
+  serverTimestamp, writeBatch, Timestamp, onSnapshot
 } from "./backend.js";
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
@@ -31,7 +31,7 @@ function renderLogin(msg = "") {
   <button class="btn accent full" data-act="login">ログイン</button></form></div></section>`;
 }
 onAuthStateChanged(auth, async user => {
-  if (!user) { S.uid = null; renderLogin(); return; }
+  if (!user) { stopWatch(); S.uid = null; renderLogin(); return; }
   S.uid = user.uid;
   try {
     const me = await getDoc(doc(db, "instructors", user.uid));
@@ -49,13 +49,7 @@ async function loadWeek() {
     const sq = query(collection(db, "students"), where("instructorUid", "==", S.uid), where("active", "==", true));
     S.students = (await getDocs(sq)).docs.map(d => ({ token: d.id, ...d.data() })).sort((a, b) => String(a.studentNo || "").localeCompare(String(b.studentNo || "")));
     const yms = [...new Set(days().map(ds => ds.slice(0, 7)))];
-    S.avail = {}; S.late = {};
-    await Promise.all(S.students.flatMap(s => yms.map(async ym => {
-      const m = await getDoc(doc(db, "students", s.token, "months", ym));
-      S.avail[s.token] = S.avail[s.token] || {};
-      S.avail[s.token][ym] = new Set(m.exists() ? m.data().slots || [] : []);
-      if (m.exists() && m.data().late) S.late[s.token] = true;
-    })));
+    await watchAvail(yms);
     const bq = query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("weekId", "==", wid()));
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() })).filter(b => b.status !== "cancelled");
     const w = await getDoc(doc(db, "weeks", `${S.uid}_${wid()}`));
@@ -64,6 +58,26 @@ async function loadWeek() {
     S.cancelReqs = (await getDocs(cq)).docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() })).filter(b => b.status === "confirmed");
   } catch (e) { toast(friendlyError(e)); }
   S.loading = false; render();
+}
+
+/* ---------- 空き時間のリアルタイム更新 ---------- */
+// 教習生が◯を付け外しすると、開いたままの画面にもすぐ反映する（予約・キャンセル希望は「最新の情報に更新」で読み直す）
+let unwatch = [], lateM = {}, renderTimer = null;
+const stopWatch = () => { unwatch.forEach(u => u()); unwatch = []; };
+function watchAvail(yms) {
+  stopWatch();
+  S.avail = {}; S.late = {}; lateM = {};
+  return Promise.all(S.students.flatMap(s => yms.map(ym => new Promise(resolve => {
+    let first = true;
+    unwatch.push(onSnapshot(doc(db, "students", s.token, "months", ym), m => {
+      S.avail[s.token] = S.avail[s.token] || {};
+      S.avail[s.token][ym] = new Set(m.exists() ? m.data().slots || [] : []);
+      lateM[s.token] = { ...lateM[s.token], [ym]: !!(m.exists() && m.data().late) };
+      S.late[s.token] = Object.values(lateM[s.token]).some(Boolean);
+      if (first) { first = false; resolve(); }
+      else if (!S.loading) { clearTimeout(renderTimer); renderTimer = setTimeout(render, 300); }
+    }, e => { if (first) { first = false; resolve(); } toast(friendlyError(e)); }));
+  }))));
 }
 
 /* ---------- 判定 ---------- */
@@ -371,7 +385,7 @@ document.addEventListener("click", async e => {
       t.disabled = true;
       try { await signInWithEmailAndPassword(auth, em, pw); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); }
     }
-    else if (a === "logout") { await signOut(auth); }
+    else if (a === "logout") { stopWatch(); await signOut(auth); }
     else if (a === "reload") { await loadWeek(); }
     else if (a === "wk") { S.week = addDays(S.week, +t.dataset.v); S.pick = null; await loadWeek(); }
     else if (a === "mode") { S.mode = t.dataset.v; if (S.mode === "slot") S.pick = null; render(); }

@@ -12,7 +12,7 @@ const msgMod = demo || await import(`${G}/firebase-messaging.js`);
 export const { initializeApp } = appMod;
 export const {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, collection, collectionGroup,
-  query, where, serverTimestamp, writeBatch, Timestamp
+  query, where, serverTimestamp, writeBatch, Timestamp, onSnapshot
 } = fsMod;
 export const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } = authMod;
 export const { getMessaging, getToken, isSupported, onMessage } = msgMod;
