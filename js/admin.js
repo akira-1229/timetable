@@ -19,7 +19,7 @@ const iname = uid => (S.instructors.find(i => i.uid === uid) || {}).name || "（
 
 function renderLogin(msg = "") {
   root.innerHTML = `<section class="panel"><div class="phead"><div><h2>管理者ログイン</h2><small>${esc(CFG.schoolName)}</small></div></div>
-  <div class="body">${DEMO ? `<div class="banner info">デモ用のログイン：管理者：<b>admin@demo</b>（パスワードは何でもOK）</div>` : ""}<form onsubmit="return false"><div class="field"><label for="em">メールアドレス</label><input id="em" type="email" autocomplete="username"></div>
+  <div class="body"><form onsubmit="return false"><div class="field"><label for="em">メールアドレス</label><input id="em" type="email" autocomplete="username"></div>
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password"></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}<button class="btn primary full" data-act="login">ログイン</button></form></div></section>`;
 }

@@ -33,11 +33,11 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
 
 ```
 （リポジトリ直下 ＝ GitHub Pages で公開する中身。もとは web/ フォルダだった）
-  index.html               入口。デモモードでは見本の教習生リンクとデータ初期化ボタン
+  index.html               入口（指導員・管理画面へのリンク）。Firebase切り替え前は並べて確認ページへのリンクとデータ初期化ボタンも出す
   student.html             教習生（QRの ?t=キー で開く。ログインなし）
   instructor.html          指導員（ログイン必須）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
   admin.html               管理（ログイン必須）。教習生用・指導員用のQRカードを印刷。qrcodejs を cdnjs から読み込む
-  demo.html                デモ専用。指導員と教習生の画面を並べて反映を確認する
+  check.html               Firebase切り替え前の確認用。指導員と教習生の画面を並べて反映を確認する
   firebase-messaging-sw.js 通知用サービスワーカー（compat SDK）。ホーム画面に追加できるよう全画面で登録する（デモでは Firebase を読み込まない）
   manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
   manifest-staff.json
@@ -97,16 +97,17 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 
 指導員画面の見た目：縦が時限・横が日付のマス目。空きマスには「その枠に入れる人数」と横棒。色は **その週の最多人数を3等分** して 緑（少ない）／黄（中間）／赤（多い）（依頼者が選択）。割り当て方は「枠から選ぶ」（候補は今週の予約の少ない順→教習期限の近い順）と「教習生から選ぶ」（選んだ人の入れる枠だけ光る。高速はオレンジ、危険予測は緑）。
 
-## デモモード
+## デモモード（＝Firebase切り替え前の運用）
 
-`config.js` の `demo: true` の間は `demo-db.js`（見本：指導員2人・教習生4人）で動く。Firebase不要でGitHub Pagesだけで画面確認できる。データはそのブラウザの localStorage のみ。
+依頼者の指示で、画面から「デモ」の文字は消して本番と同じ見た目にしてある（非公開で使っているため）。中身は `config.js` の `demo: true` のままで、`demo-db.js`（指導員2人・教習生4人の初期データ）で動く。データはそのブラウザの localStorage のみ（端末どうしでは共有されない）。
 
-- 指導員：`kumazaki@demo`（熊崎。demo-01 山田・demo-02 高井を担当）、`toyama@demo`（遠山。demo-03 島田・demo-04 飯田を担当）。パスワードは何でもよい
-- `demo.html`：指導員と教習生の画面を iframe で並べる確認用ページ。同じブラウザなので localStorage を共有し、`storage` イベントで互いにリアルタイム反映される
-- 管理：`admin@demo`
-- 教習生：`student.html?t=demo-01`〜`demo-04`（入口ページにリンクあり）
+- 指導員：`kumazaki@local`（熊崎。山田・高井を担当）、`toyama@local`（遠山。島田・飯田を担当）。パスワードは何でもよい
+- 管理：`admin@local`
+- 教習生：`student.html?t=t-yamada`／`t-takai`／`t-shimada`／`t-iida`
+- `check.html`：指導員と教習生の画面を iframe で並べる確認用ページ。同じブラウザなので localStorage を共有し、`storage` イベントで互いにリアルタイム反映される
+- 通知は送られない（「通知はまだ準備中です」と表示）
 
-本番切り替え時は `demo: false` にして Firebase の値を入れる（SETUP.md 手順6）。
+Firebase の準備ができたら `demo: false` にして Firebase の値を入れる（SETUP.md 手順6）。その時、教習生のQRは本番の管理画面で登録・印刷し直す（`t-yamada` などのキーは初期データにしかない）。
 
 ## 確認方法（チャット側でやっていたこと）
 

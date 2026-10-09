@@ -7,7 +7,7 @@
 <script src="js/config.js"></script></head>
 <body><div class="wrap"><div id="app"><div class="loading">読み込み中…</div></div></div>
 <script type="module">
-import { DEMO, CFG, esc, DEMO_STUDENTS, DEMO_USERS } from "./js/common.js";
+import { DEMO, CFG, esc } from "./js/common.js";
 import { resetDemo } from "./js/backend.js";
 const app = document.getElementById("app");
 let h = `<section class="panel"><div class="body"><h2 style="margin-top:0">空き時間登録システム</h2>
@@ -15,15 +15,11 @@ let h = `<section class="panel"><div class="body"><h2 style="margin-top:0">空�
 <div class="list"><a class="btn accent full center" style="text-decoration:none" href="instructor.html">指導員の画面</a>
 <a class="btn full center" style="text-decoration:none" href="admin.html">管理画面</a></div></div></section>`;
 if (DEMO) {
-  const ins = Object.fromEntries(Object.values(DEMO_USERS).map(u => [u.uid, u.name]));
-  h += `<section class="panel"><div class="body"><h3 style="margin-top:0">デモの使い方</h3>
-  <a class="btn accent full center" style="text-decoration:none;margin-bottom:10px" href="demo.html">指導員と教習生の画面を並べて確認する</a>
-  <ol style="padding-left:20px;margin:0 0 10px;font-size:14px"><li>「教習生の画面」で空き時間に◯を付ける</li><li>指導員の画面に <b>kumazaki@demo</b>（熊崎：山田・高井の担当）か <b>toyama@demo</b>（遠山：島田・飯田の担当）でログインして割り当てる</li><li>「この週の予約を確定して通知」を押すと、教習生の画面に予約が表示される</li></ol>
-  <p style="font-size:13px;color:var(--muted)">管理画面は <b>admin@demo</b>。パスワードは何でもOKです。データはこの端末のブラウザの中だけに保存されます。</p>
-  <h3>教習生の画面（見本）</h3><div class="list">${DEMO_STUDENTS.map(s => `<a class="btn full" style="text-decoration:none;text-align:left" href="student.html?t=${s.tok}">${esc(s.name)}さん（第${s.stage}段階・${esc(ins[s.instructorUid])}指導員の担当）</a>`).join("")}</div>
-  <button class="btn full" style="margin-top:14px" id="reset">デモのデータを最初の状態に戻す</button></div></section>`;
+  // Firebaseに切り替える前（データはこの端末の中だけ）の間だけ出す
+  h += `<p class="center" style="font-size:13px"><a href="check.html">指導員と教習生の画面を並べて確認する</a></p>
+  <p class="center"><button class="linkbtn" id="reset" style="font-size:13px;color:var(--muted)">データを最初の状態に戻す</button></p>`;
 }
 app.innerHTML = h;
 const r = document.getElementById("reset");
-if (r) r.onclick = () => { if (confirm("デモのデータを最初の状態に戻します。よろしいですか？")) { resetDemo(); localStorage.removeItem("timetable_t"); alert("初期化しました"); } };
+if (r) r.onclick = () => { if (confirm("この端末のデータを最初の状態に戻します。よろしいですか？")) { resetDemo(); localStorage.removeItem("timetable_t"); alert("初期化しました"); } };
 </script></body></html>

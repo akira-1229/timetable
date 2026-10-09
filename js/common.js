@@ -91,15 +91,8 @@ export function pushReasonText(r) {
     "unsupported": "この端末・ブラウザは通知に対応していません。iPhoneはiOS 16.4以降が必要です。",
     "denied": "通知が許可されませんでした。端末の設定から、このアプリの通知をオンにしてください。",
     "no-token": "通知の準備ができませんでした。時間をおいてもう一度お試しください。",
-    "demo": "デモモードのため、通知は届きません（本番ではスマホに届きます）。"
+    "demo": "通知はまだ準備中です。Firebaseの設定が終わると、スマホに届くようになります。"
   }[r] || "通知を有効にできませんでした。";
-}
-
-/* ---------- デモモードの表示 ---------- */
-if (DEMO && typeof document !== "undefined") {
-  const put = () => document.body.insertAdjacentHTML("afterbegin",
-    `<div class="noprint" style="background:#FDF5D6;color:#5A4500;font-size:12px;text-align:center;padding:6px 10px;border-bottom:1px solid #E5C04A">デモモード：見本データで動いています。入力した内容はこの端末の中だけに保存されます。 <a href="./index.html" style="color:#5A4500;font-weight:700">デモの入口へ</a></div>`);
-  document.body ? put() : document.addEventListener("DOMContentLoaded", put);
 }
 
 /* ---------- ホーム画面に追加（Webアプリとして使う） ---------- */
@@ -126,7 +119,7 @@ export function installSheet(kind) {
   sheet(`<h3>ホーム画面に追加しましょう</h3><p style="font-size:14px">この画面を、アプリのようにホーム画面から開けるようになります（${what}）。${after}</p>
     ${how}<button class="btn full" style="margin-top:10px" data-act="close">あとで</button>`);
 }
-// 初めて開いた時だけ自動で案内する（ホーム画面から開いている時、デモの並べて確認ページの中では出さない）
+// 初めて開いた時だけ自動で案内する（ホーム画面から開いている時、並べて確認するページの中では出さない）
 export function firstVisitInstall(kind) {
   if (!canInstall() || window.top !== window) return;
   const key = `timetable_install_shown_${kind}`;

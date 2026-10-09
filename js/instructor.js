@@ -24,7 +24,7 @@ const dayMax = s => CFG.dailyMax[s.stage] || 2;
 /* ---------- ログイン ---------- */
 function renderLogin(msg = "") {
   root.innerHTML = `<section class="panel"><div class="phead"><div><h2>職員ログイン</h2><small>${esc(CFG.schoolName)} 指導員用</small></div></div>
-  <div class="body">${DEMO ? `<div class="banner info">デモ用のログイン：指導員：<b>kumazaki@demo</b>（熊崎）または <b>toyama@demo</b>（遠山）（パスワードは何でもOK）</div>` : ""}<form id="lf" onsubmit="return false">
+  <div class="body"><form id="lf" onsubmit="return false">
   <div class="field"><label for="em">メールアドレス</label><input id="em" type="email" autocomplete="username" required></div>
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password" required></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}

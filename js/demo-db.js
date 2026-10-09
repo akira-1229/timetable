@@ -3,7 +3,7 @@
 // ・見本データ入り。このブラウザの中だけに保存される（他の端末とは共有されない）
 // ・config.js の demo を false にすると使われなくなる
 // =============================================================
-const KEY = "timetable_demo_db_v2";
+const KEY = "timetable_demo_db_v3";
 const SKEY = "timetable_demo_user";
 
 export class Timestamp {
@@ -26,28 +26,28 @@ export function resetDemo() { localStorage.removeItem(KEY); sessionStorage.remov
 
 /* ---------- 見本データ ---------- */
 export const DEMO_USERS = {
-  "admin@demo": { uid: "DEMO_ADMIN", name: "管理者" },
-  "kumazaki@demo": { uid: "DEMO_T1", name: "熊崎" },
-  "toyama@demo": { uid: "DEMO_T2", name: "遠山" }
+  "admin@local": { uid: "DEMO_ADMIN", name: "管理者" },
+  "kumazaki@local": { uid: "DEMO_T1", name: "熊崎" },
+  "toyama@local": { uid: "DEMO_T2", name: "遠山" }
 };
-// 教習生4人：demo-01・02 は熊崎指導員、demo-03・04 は遠山指導員の担当
+// 教習生4人：山田・高井は熊崎指導員、島田・飯田は遠山指導員の担当
 export const DEMO_STUDENTS = [
-  { tok: "demo-01", name: "山田", stage: 1, instructorUid: "DEMO_T1" },
-  { tok: "demo-02", name: "高井", stage: 2, instructorUid: "DEMO_T1" },
-  { tok: "demo-03", name: "島田", stage: 1, instructorUid: "DEMO_T2" },
-  { tok: "demo-04", name: "飯田", stage: 2, instructorUid: "DEMO_T2" }
+  { tok: "t-yamada", name: "山田", stage: 1, instructorUid: "DEMO_T1" },
+  { tok: "t-takai", name: "高井", stage: 2, instructorUid: "DEMO_T1" },
+  { tok: "t-shimada", name: "島田", stage: 1, instructorUid: "DEMO_T2" },
+  { tok: "t-iida", name: "飯田", stage: 2, instructorUid: "DEMO_T2" }
 ];
 const pad = n => String(n).padStart(2, "0");
 function seed() {
   let x = 20261001; const r = () => (x = (x * 9301 + 49297) % 233280) / 233280;
-  DB.set("admins/DEMO_ADMIN", { note: "デモ管理者" });
+  DB.set("admins/DEMO_ADMIN", { note: "管理者" });
   Object.values(DEMO_USERS).filter(u => u.uid !== "DEMO_ADMIN").forEach(u =>
     DB.set(`instructors/${u.uid}`, { name: u.name, email: Object.keys(DEMO_USERS).find(k => DEMO_USERS[k] === u) }));
   const now = new Date(); const months = [0, 1].map(i => new Date(now.getFullYear(), now.getMonth() + i, 1));
   DEMO_STUDENTS.forEach((st, i) => {
     const dl = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30 + i * 25);
     DB.set(`students/${st.tok}`, {
-      studentNo: `D${pad(i + 1)}`, name: st.name, stage: st.stage, instructorUid: st.instructorUid,
+      studentNo: `${pad(i + 1)}`, name: st.name, stage: st.stage, instructorUid: st.instructorUid,
       deadline: `${dl.getFullYear()}-${pad(dl.getMonth() + 1)}-${pad(dl.getDate())}`, active: true
     });
     const evening = i % 2 === 1;           // 平日は夕方以降しか来られない人
