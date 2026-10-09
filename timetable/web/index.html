@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>空き時間登録システム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css"><link rel="icon" href="icons/icon-192.png">
+<script src="js/config.js"></script></head>
+<body><div class="wrap"><div id="app"><div class="loading">読み込み中…</div></div></div>
+<script type="module">
+import { DEMO, CFG, esc } from "./js/common.js";
+import { resetDemo } from "./js/backend.js";
+const app = document.getElementById("app");
+let h = `<section class="panel"><div class="body"><h2 style="margin-top:0">空き時間登録システム</h2>
+<p>教習生の方は、学園で受け取ったQRコードから開いてください。</p>
+<div class="list"><a class="btn accent full center" style="text-decoration:none" href="instructor.html">指導員の画面</a>
+<a class="btn full center" style="text-decoration:none" href="admin.html">管理画面</a></div></div></section>`;
+if (DEMO) {
+  const sample = [1, 2, 3, 4, 36, 37, 38].map(i => `demo-${String(i).padStart(2, "0")}`);
+  h += `<section class="panel"><div class="body"><h3 style="margin-top:0">デモの使い方</h3>
+  <ol style="padding-left:20px;margin:0 0 10px;font-size:14px"><li>下の「教習生の画面」で空き時間に◯を付ける</li><li>指導員の画面に <b>yamada@demo</b>（1〜35番の担当）か <b>sato@demo</b>（36〜70番の担当）でログインして割り当てる</li><li>教習生の画面に戻ると、確定した予約が表示される</li></ol>
+  <p style="font-size:13px;color:var(--muted)">管理画面は <b>admin@demo</b>。パスワードは何でもOKです。データはこの端末のブラウザの中だけに保存されます。</p>
+  <h3>教習生の画面（見本）</h3><div class="list">${sample.map((t, i) => `<a class="btn full" style="text-decoration:none;text-align:left" href="student.html?t=${t}">教習生 ${t.slice(5)}番（${i < 4 ? "山田" : "佐藤"}指導員の担当）</a>`).join("")}</div>
+  <button class="btn full" style="margin-top:14px" id="reset">デモのデータを最初の状態に戻す</button></div></section>`;
+}
+app.innerHTML = h;
+const r = document.getElementById("reset");
+if (r) r.onclick = () => { if (confirm("デモのデータを最初の状態に戻します。よろしいですか？")) { resetDemo(); localStorage.removeItem("timetable_t"); alert("初期化しました"); } };
+</script></body></html>

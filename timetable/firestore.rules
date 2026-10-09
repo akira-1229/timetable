@@ -1,0 +1,105 @@
+rules_version = '2';
+// =============================================================
+// 空き時間登録システム セキュリティルール
+// ・教習生：QRのキー（students/{t} の t）を知っている本人だけが、自分の分を読み書きできる
+//           一覧の取得はできない。書き換えられる項目も限定
+// ・指導員：instructors に登録された職員だけ。自分の担当の教習生だけ見られる
+// ・管理者：admins に登録された職員だけ。すべて操作できる
+// ・通知の送信（Apps Script）はサービスアカウントで動くため、このルールの対象外
+// =============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isInstructor() { return signedIn() && exists(/databases/$(database)/documents/instructors/$(request.auth.uid)); }
+    function studentData(t) { return get(/databases/$(database)/documents/students/$(t)).data; }
+    function ownsStudent(t) { return isInstructor() && studentData(t).instructorUid == request.auth.uid; }
+    function changedOnly(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function validTokens() {
+      return !('fcmTokens' in request.resource.data)
+        || (request.resource.data.fcmTokens is list && request.resource.data.fcmTokens.size() <= 5);
+    }
+
+    // 管理者の一覧：手動で登録。本人が「自分が管理者か」を確認できるだけ
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // 指導員
+    match /instructors/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (signedIn() && request.auth.uid == uid && changedOnly(['fcmTokens']) && validTokens());
+    }
+
+    // 教習生（ドキュメントIDがQRのキー）
+    match /students/{t} {
+      allow get: if true;   // キーを知っている人だけが取得できる（推測できない長さのキー）
+      allow list: if isAdmin() || (isInstructor() && resource.data.instructorUid == request.auth.uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (isInstructor() && resource.data.instructorUid == request.auth.uid && changedOnly(['lastNotifiedAt']))
+        || (resource.data.active == true && changedOnly(['fcmTokens', 'ackAt']) && validTokens());
+
+      // 月ごとの空き時間
+      match /months/{ym} {
+        allow get: if true;
+        allow list: if isAdmin() || ownsStudent(t);
+        allow create, update: if isAdmin()
+          || (studentData(t).active == true
+              && ym.matches('^[0-9]{4}-[0-9]{2}$')
+              && request.resource.data.keys().hasOnly(['slots', 'updatedAt', 'late'])
+              && request.resource.data.slots is list
+              && request.resource.data.slots.size() <= 310);
+        allow delete: if isAdmin();
+      }
+
+      // 予約（教習生には確定・取り消しだけが見える。下書きは見えない）
+      match /bookings/{id} {
+        allow read: if isAdmin() || ownsStudent(t) || resource.data.status in ['confirmed', 'cancelled'];
+        allow create: if isAdmin()
+          || (ownsStudent(t)
+              && request.resource.data.instructorUid == request.auth.uid
+              && request.resource.data.status in ['draft', 'confirmed']);
+        allow update: if isAdmin()
+          || (ownsStudent(t)
+              && resource.data.instructorUid == request.auth.uid
+              && request.resource.data.instructorUid == request.auth.uid)
+          || (resource.data.status == 'confirmed'
+              && changedOnly(['cancelRequested', 'cancelRequestedAt'])
+              && request.resource.data.cancelRequested == true);
+        allow delete: if isAdmin() || (ownsStudent(t) && resource.data.status == 'draft');
+      }
+    }
+
+    // 指導員が自分の予約をまとめて読むための検索（コレクショングループ）
+    match /{path=**}/bookings/{id} {
+      allow read: if isAdmin() || (isInstructor() && resource.data.instructorUid == request.auth.uid);
+    }
+
+    // 週の確定記録（ドキュメントID：指導員UID_週の月曜日）
+    match /weeks/{wid} {
+      allow read, write: if isAdmin() || (isInstructor() && wid.matches(request.auth.uid + '_[0-9-]+'));
+    }
+
+    // 通知の送信待ち（Apps Scriptが取り出して送る）。画面からは追加だけできる
+    match /outbox/{id} {
+      allow read, update, delete: if false;
+      allow create: if request.resource.data.keys().hasOnly(['to', 'type', 'studentToken', 'instructorUid', 'title', 'body', 'createdAt', 'sent'])
+        && request.resource.data.sent == false
+        && request.resource.data.title is string && request.resource.data.title.size() <= 100
+        && request.resource.data.body is string && request.resource.data.body.size() <= 400
+        && (
+          (request.resource.data.to == 'student'
+            && (isAdmin() || ownsStudent(request.resource.data.studentToken)))
+          ||
+          (request.resource.data.to == 'instructor'
+            && request.resource.data.type == 'cancelRequest'
+            && studentData(request.resource.data.studentToken).instructorUid == request.resource.data.instructorUid)
+        );
+    }
+  }
+}

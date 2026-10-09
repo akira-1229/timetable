@@ -1,0 +1,138 @@
+# CLAUDE.md — 空き時間登録システム（引き継ぎ）
+
+聖徳自動車学園（岐阜）の「教習生の空き時間登録＋指導員の予約割り当て」システム。claude.ai のチャットで設計・試作し、Claude Code に引き継いだ。この文書を最初に読むこと。
+
+## 依頼者について
+
+- あきら（近藤 旭）。学園の事務・経理・社内IT担当。社内ツールを自作して業務をデジタル化している
+- 会話は **くだけた関西弁**。結論から、短く、少しずつ確認しながら進めるのが好み
+- 上司の承認を得て **試験運用** の段階。指導員2人で始める（1人あたり教習生30〜40人。上限は設けない）
+- 学園の運用ルールは口頭で少しずつ出てくる。**ルールは推測で決めず、不明点は聞く**。決まったルールは `web/js/config.js` に寄せる
+
+## 背景と目的
+
+- これまで教習生は毎月、紙の用紙（1日〜31日 × 1〜10限）で「予約を入れてよい時間帯」に◯を付けて提出していた。配布・回収・転記・催促が負担
+- 教習生はスマホで月ごとに空き時間を登録し、指導員はそれを見て **週単位** で予約を割り当てる
+- 予約が決まったら教習生のスマホに **プッシュ通知**（絶対条件。メールは使わない）
+
+## 構成
+
+リポジトリ名は **timetable**（公開URL：`https://ユーザー名.github.io/timetable/`）。QRコードにこのURLが入るため、**QRを配った後はリポジトリ名を変えないこと**（変えると配ったQRが全部使えなくなる）。
+
+| 役割 | 使うもの | 場所 |
+| --- | --- | --- |
+| 画面（教習生・指導員・管理） | 素のHTML/CSS/JS（ESモジュール、ビルドなし） | GitHub Pages（リポジトリ直下＝`web/` の中身） |
+| データ | Cloud Firestore（東京リージョン予定） | `firestore.rules` / `firestore.indexes.json` |
+| ログイン | Firebase Authentication（メール/パスワード、職員のみ） | |
+| 通知の送信 | Google Apps Script（5分おき＋毎朝9時）→ FCM HTTP v1 | `apps-script/` |
+| 費用 | すべて無料枠（Firebase Spark。Cloud Functions は使わない＝Blaze不要） | |
+
+Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンドラは使っていない。この方針を変える時は依頼者に確認する。
+
+## ファイル
+
+```
+web/                       ← GitHub Pages で公開する中身（リポジトリ直下に置いている想定）
+  index.html               入口。デモモードでは見本の教習生リンクとデータ初期化ボタン
+  student.html             教習生（QRの ?t=キー で開く。ログインなし）
+  instructor.html          指導員（ログイン必須）
+  admin.html               管理（ログイン必須）。qrcodejs を cdnjs から読み込む
+  firebase-messaging-sw.js 通知用サービスワーカー（compat SDK）
+  manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
+  manifest-staff.json
+  css/app.css              色はCSS変数（ライト/ダーク対応）。フォントは BIZ UDPGothic
+  js/config.js             設定とルール（公開してよい値だけ。classic script で self.APP_CONFIG を作る）
+  js/backend.js            本番Firebaseとデモ用DBの切り替え（top-level await で動的import）
+  js/demo-db.js            デモ用の仮DB（Firestore/Auth風のAPI。localStorageに保存。見本データ入り）
+  js/common.js             初期化、日付、トースト/シート、プッシュ登録、デモの帯
+  js/student.js            教習生画面
+  js/instructor.js         指導員画面（ルール判定の本体）
+  js/admin.js              管理画面
+firestore.rules            セキュリティルール
+firestore.indexes.json     必要な索引（コレクショングループ2つ＋students）
+apps-script/Code.gs        通知係（outbox の送信、締切前リマインド、テスト送信）
+apps-script/appsscript.json
+SETUP.md                   セットアップ手順書（日本語。依頼者が読む）
+```
+
+画面のコードの書き方：状態はモジュール内の `S` オブジェクト、`render()` で `innerHTML` を丸ごと描き直し、クリックは `data-act` 属性のイベント委譲。画面の文言は丁寧語（です・ます）。
+
+## データ（Firestore）
+
+| パス | 内容 | 書く人 |
+| --- | --- | --- |
+| `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
+| `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt` | 管理者／本人は fcmTokens・ackAt のみ／担当指導員は lastNotifiedAt のみ |
+| `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
+| `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"), pairId` | 担当指導員（本人は cancelRequested のみ） |
+| `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
+| `outbox/{id}` | 通知の送信待ち `to(student/instructor), type, studentToken, instructorUid, title, body, sent` | 指導員（教習生宛）／教習生（キャンセル希望のみ指導員宛）。読み出しは Apps Script だけ |
+
+セキュリティの考え方：教習生はキーを知っている本人だけが自分の分を get でき、一覧取得はできない。予約の下書き（draft）は教習生に見えない。指導員は自分の担当だけ。Apps Script はサービスアカウント（ルール対象外）。**サービスアカウントの秘密鍵はスクリプトプロパティだけに置き、絶対にリポジトリへ入れない。**
+
+## 業務フロー
+
+1. 教習生：毎月、次月分の空き時間を登録（締切 `deadlineDay`＝毎月20日。仮の値）。予約が入っていない枠はいつでも変更可。締切後の変更は `late` を立て、指導員側に「締切後に変更あり」
+2. 指導員：週ごと（`openDays` 月〜土）にマス目で割り当てる。確定前は何度入れ直しても通知しない
+3. 「この週の予約を確定して通知」→ 教習生1人につき **週1回まとめて** 通知
+4. 確定後の追加・取り消し・キャンセル承認/却下は **その都度** 通知
+5. 予約済みの枠は教習生側でロック。教習生は「キャンセル希望」を送れる（指導員に通知）→ 指導員が承認/却下
+6. 教習生は通知を見たら「確認しました」。`lastNotifiedAt > ackAt` の人を指導員画面に未確認として出し、手動で再通知できる
+7. 毎朝9時、締切の3日前と前日に、次月分が未入力の教習生だけへ通知（Apps Script）
+
+## 割り当てルール（確定済み。`config.js` と `instructor.js` の `evaluate` / `evaluatePair`）
+
+時限：1限 9:50–10:40、2限 10:50–11:40、3限 11:50–12:40、（昼休み）、4限 13:30–14:20、5限 14:30–15:20、（20分休憩）、6限 15:40–16:30、7限 16:40–17:30、8限 17:40–18:30、（20分休憩）、9限 18:50–19:40、10限 19:50–20:40
+
+| ルール | 内容 | 設定 |
+| --- | --- | --- |
+| 1日の上限 | 第1段階 2時限、第2段階 3時限 | `dailyMax` |
+| 連続3時限 | 第2段階は原則禁止（1・2・4、3・4・6、7・8・10 はOK） | `noTripleStages` |
+| 連続の数え方 | **3限と4限の間（昼休み）は連続に数えない**。2・3・4、3・4・5 はOK。5/6、8/9 の20分休憩は連続に数える（依頼者確認済み） | `breakAfter: [3]` |
+| 高速教習 | 高速教習に限り連続3時限可。組み合わせは 1・2・3／4・5・6／5・6・7／6・7・8 のみ。確認ダイアログを出し、3時限すべてに `highway: true` | `highwaySets` |
+| 日没が早い期間 | 10月3日〜2月15日は 6・7・8 の高速教習を **警告**。警告を確認すれば強制で入れられる（`forced: true`）。ルールは変わる可能性あり | `darkSeason` |
+| 危険予測 | 2時限連続の特別な教習（`lessonType: "kiken"`、2件を `pairId` で1組）。昼休み・20分休憩をまたぐ組（3・4、5・6、8・9）は **絶対に不可**。可：1・2／2・3／4・5／6・7／7・8／9・10。ほかの予約と合わせて連続3時限になる組も不可。取り消しは2時限まとめて | `kiken.noPairAfter: [3,5,8]` |
+
+指導員画面の見た目：縦が時限・横が日付のマス目。空きマスには「その枠に入れる人数」と横棒。色は **その週の最多人数を3等分** して 緑（少ない）／黄（中間）／赤（多い）（依頼者が選択）。割り当て方は「枠から選ぶ」（候補は今週の予約の少ない順→教習期限の近い順）と「教習生から選ぶ」（選んだ人の入れる枠だけ光る。高速はオレンジ、危険予測は緑）。
+
+## デモモード
+
+`config.js` の `demo: true` の間は `demo-db.js`（見本：指導員2人・教習生70人）で動く。Firebase不要でGitHub Pagesだけで画面確認できる。データはそのブラウザの localStorage のみ。
+
+- 指導員：`yamada@demo`（demo-01〜35 担当）、`sato@demo`（demo-36〜70 担当）。パスワードは何でもよい
+- 管理：`admin@demo`
+- 教習生：`student.html?t=demo-01` など（入口ページにリンクあり）
+
+本番切り替え時は `demo: false` にして Firebase の値を入れる（SETUP.md 手順6）。
+
+## 確認方法（チャット側でやっていたこと）
+
+- `web/` を `python3 -m http.server` で配信し、デモモードのまま Playwright（Chromium、390×844）で 教習生入力 → 指導員ログイン・割り当て・確定 → 管理画面 を通しで操作。コンソールエラーが無いことを確認
+- ルール判定は、仮DBに「全枠空きの第1段階・第2段階の教習生」を置き、組み合わせ（1・2・4、2・3・4、3・4・5、1・2・3、6・7・8、7・8・9、危険予測の各組など）を順に試した。すべて想定どおり
+- **本物の Firebase／FCM／Apps Script では一度も動かしていない**
+
+## 未確認・未決定（依頼者に確認が必要）
+
+- [ ] 本番Firebaseでの動作、索引の作成、通知の配信（SETUP.md 手順10）
+- [ ] iPhoneで「ホーム画面に追加」したアイコンから開いた時に `?t=` が引き継がれるか（`localStorage` の控えもあるが、iOSはホーム画面アプリとSafariで保存領域が別）
+- [ ] 入力締切日（今は20日）、キャンセルの期限・キャンセル料、学園の電話番号（`schoolTel` は仮）
+- [ ] 予約を入れる曜日（今は月〜土。日曜を含むか）
+- [ ] 第1段階の連続2時限に制限があるか（今は制限なし）
+- [ ] 高速教習・危険予測を **段階で制限するか**（今はどちらも段階を見ていない）
+- [ ] 指導員が「確定」する期限
+
+## 今後やること（候補）
+
+- 依頼者が続きのルールを出してくる予定。まずそれを `config.js` と `evaluate` 系に反映し、組み合わせテストを書く
+- 未確認の教習生への自動再通知、送信済み outbox の自動削除、App Check
+- 「締切後に変更あり」の詳細表示（どの枠が変わったか）
+- 複数指導員の担当が重なる場合の二重予約チェック（今は担当1人前提）
+- 自動テストの整備（今はチャット内の使い捨てスクリプトのみ。デモモード＋Playwright で回すのが手軽）
+
+## 参考（チャットで作った資料。claude.ai のリンク）
+
+- 提案書（上司向け）：https://claude.ai/code/artifact/70778d0c-fd4f-45c8-a039-aed5ddb9af13
+- デメリットと対策：https://claude.ai/code/artifact/c411149c-bf2f-4dc2-bd13-914dd9784186
+- A4 2枚の概要資料：https://claude.ai/artifact/HPuTynGLNerhKwvvDnagbk
+- 初期の画面デモ（単一HTML。本実装より古い）：https://claude.ai/artifact/3DBjdgQARjw8nYKUNaUq6t
