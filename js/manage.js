@@ -3,7 +3,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 const root = document.getElementById("app");
@@ -48,14 +48,13 @@ function render() {
   root.innerHTML = h + `<p class="center noprint">${viewToggle()}</p>`;
 }
 const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => !f || String(s.name).includes(f) || String(s.studentNo).includes(f) || String(s.license || "").includes(f)); };
-const ageText = s => s.ageYears != null ? `${s.ageYears}歳${s.ageMonths != null ? `${s.ageMonths}ヶ月` : ""}` : "";
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
 function renderPC() {
   const list = filtered();
   const cols = [
     { t: `<input type="checkbox" data-act="selPage" aria-label="表示中を全選択" ${list.length && list.every(s => S.sel.has(s.token)) ? "checked" : ""}>`, html: s => `<input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">` },
     { k: "studentNo", t: "番号" }, { k: "name", t: "名前" },
-    { k: "age", t: "年齢", v: ageText, sort: s => (s.ageYears ?? -1) * 12 + (s.ageMonths || 0) }, { k: "gender", t: "性別" },
+    { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 }, { k: "gender", t: "性別" },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
     { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
     { k: "startDate", t: "教習開始" }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限" },
@@ -98,7 +97,7 @@ function editSheet(s) {
   <datalist id="dl_held">${(CFG.heldLicenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
   <div class="row"><div class="field"><label for="f_nm">名前</label><input id="f_nm" value="${esc(s.name)}" autocomplete="off"></div>
   <div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off"></div></div>
-  <div class="row"><div class="field"><label for="f_ay">年齢</label><div style="display:flex;align-items:center;gap:6px"><input id="f_ay" type="number" min="0" max="99" inputmode="numeric" value="${esc(s.ageYears ?? "")}" style="width:100%"><span style="white-space:nowrap">歳</span><input id="f_am" type="number" min="0" max="11" inputmode="numeric" value="${esc(s.ageMonths ?? "")}" style="width:100%"><span style="white-space:nowrap">ヶ月</span></div></div>
+  <div class="row"><div class="field"><label for="f_birth">生年月日</label><input id="f_birth" type="date" value="${esc(s.birthDate || "")}"><span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
   <div class="field"><label for="f_sx">性別</label><select id="f_sx">${opt("", s.gender, "選んでください")}${opt("男", s.gender)}${opt("女", s.gender)}</select></div></div>
   <div class="row"><div class="field"><label for="f_lic">希望免許</label><input id="f_lic" list="dl_lic" value="${esc(s.license || "")}" autocomplete="off"></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
@@ -139,7 +138,9 @@ function printCards() {
   area.scrollIntoView({ behavior: "smooth" });
 }
 
-document.addEventListener("input", e => { if (e.target.id === "flt") { S.filter = e.target.value; const pos = e.target.selectionStart; render(); const f = document.getElementById("flt"); f.focus(); f.setSelectionRange(pos, pos); } });
+document.addEventListener("input", e => {
+  if (e.target.id === "f_birth") { const el = document.getElementById("f_age"); if (el) el.textContent = e.target.value ? `今日時点で ${ageText(e.target.value)}` : ""; return; }
+  if (e.target.id === "flt") { S.filter = e.target.value; const pos = e.target.selectionStart; render(); const f = document.getElementById("flt"); f.focus(); f.setSelectionRange(pos, pos); } });
 document.addEventListener("change", e => {
   if (e.target.dataset.act === "selPage") { filtered().forEach(s => e.target.checked ? S.sel.add(s.token) : S.sel.delete(s.token)); render(); return; }
   if (e.target.dataset.act === "sel") { const k = e.target.dataset.s; e.target.checked ? S.sel.add(k) : S.sel.delete(k); render(); } });
@@ -161,7 +162,7 @@ document.addEventListener("click", async e => {
       const num = (id, max) => { const x = v(id); return x === "" ? null : Math.min(max, Math.max(0, Math.floor(+x))); };
       const data = {
         studentNo: v("f_no"), name: v("f_nm"), stage: +v("f_st"), instructorUid: S.uid, active: v("f_ac") === "1",
-        ageYears: num("f_ay", 99), ageMonths: num("f_am", 11), gender: v("f_sx") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
+        birthDate: v("f_birth") || null, gender: v("f_sx") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
       };
       DATES.forEach(([k]) => { data[k] = v(`f_${k}`) || null; });
       if (!data.name) return toast("名前は必須です");

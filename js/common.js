@@ -59,6 +59,16 @@ export function lessonPlan(st, pending) {
   return { items, total: n, ok, reason };
 }
 
+// 生年月日（YYYY-MM-DD）から今日時点の年齢（○歳○ヶ月）。誕生日が来ると自動で上がる
+export function ageOf(birth, on = today()) {
+  if (!birth) return null;
+  const b = parseDate(birth);
+  let m = (on.getFullYear() - b.getFullYear()) * 12 + (on.getMonth() - b.getMonth());
+  if (on.getDate() < b.getDate()) m--;
+  return m < 0 ? null : { y: Math.floor(m / 12), m: m % 12, months: m };
+}
+export const ageText = birth => { const a = ageOf(birth); return a ? `${a.y}歳${a.m}ヶ月` : ""; };
+
 /* ---------- 画面の小物 ---------- */
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
