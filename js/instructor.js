@@ -129,6 +129,7 @@ function evaluate(s, ds, p) {
       if (linked(tri[0], tri[1]) && linked(tri[1], tri[2])) {
         if (S.bookings.some(b => b.token === s.token && b.date === ds && b.pairId && tri.includes(b.period)))
           return { ok: false, reason: `ほかの予約と合わせて連続3時限（${tri.join("・")}限）になります` };
+        if (!hasSpecial(s)) return { ok: false, reason: `連続3時限（${tri.join("・")}限）は入れられません` };
         if (!(CFG.highwaySets || []).some(set => sameSet(set, tri)))
           return { ok: false, reason: `連続3時限（${tri.join("・")}限）は入れられません。高速教習は ${(CFG.highwaySets || []).map(x => x.join("・")).join(" / ")} 限のみです` };
         const dark = inDarkSeason(ds) && ((CFG.darkSeason || {}).sets || []).some(set => sameSet(set, tri));
@@ -143,6 +144,7 @@ const canBook = (s, ds, p) => evaluate(s, ds, p).ok !== false;
 /* ---------- 2時限連続の教習（危険予測・単独高速） ---------- */
 // type は "kiken"（危険予測）か "hwSolo"（単独高速）
 const KK = () => CFG.kiken || { label: "危険予測", noPairAfter: [] };
+const hasSpecial = s => (CFG.specialStages || [2]).includes(s.stage);                 // 高速教習・危険予測・単独高速がある段階か
 const PT = type => type === "hwSolo" ? (CFG.hwSolo || { label: "単独高速", noPairAfter: [3] }) : KK();
 const pairOk = (a, type = "kiken") => a >= 1 && a + 1 <= 10 && !PT(type).noPairAfter.includes(a);   // a限と a+1限を続けて入れられるか
 const pairsWith = (p, type = "kiken") => [p - 1, p].filter(a => pairOk(a, type));                     // p限を含む2時限連続の候補（開始時限）
@@ -155,6 +157,7 @@ function isCombo(list) {
 //   ok:true（dark:true は日没が早い期間の警告付き）／ok:false（reason に理由）
 function evaluatePair(s, ds, a, type = "kiken") {
   const L = PT(type).label;
+  if (!hasSpecial(s)) return { ok: false, reason: `第${s.stage}段階には${L}はありません` };
   if (!pairOk(a, type)) return { ok: false, reason: `${a}・${a + 1}限は休憩をはさむため、${L}は入れられません` };
   for (const q of [a, a + 1]) {
     if (!isFree(s.token, ds, q)) return { ok: false, reason: `${q}限が空いていません` };
@@ -218,8 +221,8 @@ function render() {
   const pk = S.mode === "student" && S.pick ? ST(S.pick) : null;
   if (S.mode === "student") {
     h += pk ? `<div class="picking"><span><b>${esc(pk.name)}</b>を割り当て中<br><span style="font-size:12px;color:var(--muted)">光っている枠をタップすると予約されます（第${pk.stage}段階・1日${dayMax(pk)}時限まで${(CFG.noTripleStages || []).includes(pk.stage) ? "・連続3時限は高速教習のみ" : ""}）</span></span><button class="btn" data-act="unpick">やめる</button></div>
-      <div class="seg" role="group" aria-label="教習の種類"><button aria-pressed="${!S.ptype}" data-act="ptype" data-v="">通常</button><button aria-pressed="${S.ptype === "kiken"}" data-act="ptype" data-v="kiken">${KK().label}</button><button aria-pressed="${S.ptype === "hwSolo"}" data-act="ptype" data-v="hwSolo">${PT("hwSolo").label}</button></div>
-      ${S.ptype ? `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">${PT(S.ptype).label}は2時限連続です。光っているマスは開始の時限で、タップするとその時限と次の時限の2つがまとめて入ります。</div>` : ""}`
+      ${hasSpecial(pk) ? `<div class="seg" role="group" aria-label="教習の種類"><button aria-pressed="${!S.ptype}" data-act="ptype" data-v="">通常</button><button aria-pressed="${S.ptype === "kiken"}" data-act="ptype" data-v="kiken">${KK().label}</button><button aria-pressed="${S.ptype === "hwSolo"}" data-act="ptype" data-v="hwSolo">${PT("hwSolo").label}</button></div>` : ""}
+      ${S.ptype && hasSpecial(pk) ? `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">${PT(S.ptype).label}は2時限連続です。光っているマスは開始の時限で、タップするとその時限と次の時限の2つがまとめて入ります。</div>` : ""}`
       : `<div class="banner info">下の一覧から教習生を選ぶと、その人が空いている枠だけが光ります。</div>`;
   } else {
     h += `<div class="heatleg"><span><i style="background:var(--lv1-soft);border-color:var(--lv1)"></i>少ない（${T1}人以下）</span><span><i style="background:var(--lv2-soft);border-color:var(--lv2)"></i>中間（${T1 + 1}〜${T2}人）</span><span><i style="background:var(--lv3-soft);border-color:var(--lv3)"></i>多い（${T2 + 1}人以上）</span></div>
@@ -236,7 +239,7 @@ function render() {
         const s = ST(b.token);
         const gone = goneDraft(b);
         h += `<td><button class="wc bk ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(s ? s.name : "")}${gone ? " 教習生が空き時間を取り消しました" : ""}">${esc(s ? shortName(s) : "?")}<small>${gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : "通知済み"}</small></button></td>`;
-      } else if (pk && S.ptype) {
+      } else if (pk && S.ptype && hasSpecial(pk)) {
         const ev = evaluatePair(pk, d, p, S.ptype), ok = ev.ok, L = PT(S.ptype).label;
         h += `<td><button class="wc ${ok ? `cand ${S.ptype === "kiken" ? "kk" : "hw"}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${p}・${p + 1}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
       } else if (pk) {
@@ -304,9 +307,9 @@ function pairSheet(ds, p, start, seg, type) {
   }
   const a = pairs.includes(start) ? start : pairs[0];
   h += `<div class="chips" role="group" aria-label="時限" style="margin-bottom:8px">${pairs.map(x => `<button class="chip o" aria-pressed="${x === a}" data-act="pairStart" data-d="${ds}" data-p="${p}" data-v="${x}" data-t="${type}">${x}・${x + 1}限</button>`).join("")}</div>`;
-  const c = S.students.filter(s => isFree(s.token, ds, a) && isFree(s.token, ds, a + 1))
+  const c = S.students.filter(s => hasSpecial(s) && isFree(s.token, ds, a) && isFree(s.token, ds, a + 1))
     .sort((x, y) => weekCount(x.token) - weekCount(y.token) || String(x.deadline || "9").localeCompare(String(y.deadline || "9")));
-  h += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${a}限と${a + 1}限の両方が空いている教習生 ${c.length}人</div><div class="list">`;
+  h += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${a}限と${a + 1}限の両方が空いている教習生 ${c.length}人（第${(CFG.specialStages || [2]).join("・")}段階のみ）</div><div class="list">`;
   c.forEach(s => {
     const ev = evaluatePair(s, ds, a, type);
     const note = !ev.ok ? `<div class="s" style="color:var(--orange)">${esc(ev.reason)}</div>`
