@@ -3,7 +3,7 @@
  *
  * ・processOutbox：5分おきに起動。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
  * ・dailyReminder：毎朝起動。締切の数日前と前日に、次月分が未入力の教習生だけに通知する
- *                  あわせて、教習期限・仮免期限が近い教習生を担当指導員に通知する
+ *                  あわせて、教習期限・仮免期限の3ヶ月前・2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
  *
  * 必要なスクリプトプロパティ（プロジェクトの設定 → スクリプト プロパティ）
  *   PROJECT_ID   … FirebaseのプロジェクトID
@@ -12,7 +12,7 @@
  *   APP_URL      … GitHub Pagesの公開URL（最後に / を付ける）
  *   DEADLINE_DAY … 次月分の入力締切日（例：20）
  *   REMIND_DAYS  … 締切の何日前に知らせるか（カンマ区切り。例：3,1）
- *   EXPIRY_ALERT_DAYS … 教習期限・仮免期限の何日前に指導員へ知らせるか（カンマ区切り。省略時 30,14,7,3,1,0。0は当日）
+ *   EXPIRY_ALERT … 教習期限・仮免期限のいつ知らせるか（カンマ区切り。m＝ヶ月前、w＝週間前、d＝日前。省略時 3m,2m,1m,2w）
  *
  * ※ 秘密鍵はGitHubなど外部に絶対に置かないこと
  */
@@ -176,32 +176,51 @@ function inputReminder_() {
   });
   Logger.log(`締切のお知らせ：${n}人に送信`);
 }
-// 教習期限（deadline）・仮免期限（karimenExpiry）が、決まった日数前になった教習生を、担当指導員ごとにまとめて知らせる
+// 教習期限（deadline）・仮免期限（karimenExpiry）の決まった時期（例：3ヶ月前・2ヶ月前・1ヶ月前・2週間前）に、
+// 教習生本人と担当指導員に知らせる。指導員には担当の分を1通にまとめる
+// 「○ヶ月前」は期限日と同じ日付の日（その月に同じ日が無い時は月末）、「○週間前」「○日前」は日数で数える
+function alertWhen_() {
+  return String(prop('EXPIRY_ALERT') || '3m,2m,1m,2w').split(',').map(x => x.trim()).filter(Boolean).map(x => {
+    const n = parseInt(x, 10), u = x.replace(/[0-9]/g, '');
+    return { n: n, u: u, label: u === 'm' ? n + 'ヶ月前' : u === 'w' ? n + '週間前' : n + '日前' };
+  });
+}
+function alertDate_(exp, w) {
+  if (w.u === 'm') {
+    const y = exp.getFullYear(), m = exp.getMonth() - w.n, last = new Date(y, m + 1, 0).getDate();
+    return new Date(y, m, Math.min(exp.getDate(), last));
+  }
+  return new Date(exp.getFullYear(), exp.getMonth(), exp.getDate() - (w.u === 'w' ? 7 : 1) * w.n);
+}
 function expiryAlert_() {
   const now = new Date(Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy/MM/dd"));
-  const alertDays = String(prop('EXPIRY_ALERT_DAYS') || '30,14,7,3,1,0').split(',').map(Number);
+  const when = alertWhen_();
   const students = query_({
     from: [{ collectionId: 'students' }],
     where: { fieldFilter: { field: { fieldPath: 'active' }, op: 'EQUAL', value: { booleanValue: true } } }
   });
-  const byInst = {};
+  const appUrl = prop('APP_URL'); const byInst = {}; let ns = 0;
   students.forEach(st => {
-    const s = st.data;
-    [['deadline', '教習期限'], ['karimenExpiry', '仮免期限']].forEach(([k, label]) => {
+    const s = st.data, tok = relPath_(st.name).split('/')[1];
+    [['deadline', '教習期限'], ['karimenExpiry', '仮免許の期限']].forEach(([k, label]) => {
       if (!s[k]) return;
-      const p = String(s[k]).split('-').map(Number), d = new Date(p[0], p[1] - 1, p[2]);
-      const left = Math.round((d - now) / 86400000);
-      if (alertDays.indexOf(left) < 0) return;
-      (byInst[s.instructorUid] = byInst[s.instructorUid] || []).push(`${s.name}（${label} ${p[1]}月${p[2]}日・${left === 0 ? '今日まで' : 'あと' + left + '日'}）`);
+      const p = String(s[k]).split('-').map(Number), exp = new Date(p[0], p[1] - 1, p[2]);
+      const w = when.find(x => alertDate_(exp, x).getTime() === now.getTime());
+      if (!w) return;
+      const dateText = `${p[0]}年${p[1]}月${p[2]}日`;
+      (byInst[s.instructorUid] = byInst[s.instructorUid] || []).push(`${s.name}（${label} ${p[1]}月${p[2]}日・${w.label}）`);
+      ns += deliver_(`students/${tok}`, s.fcmTokens, `${label}が近づいています`,
+        `${label}は${dateText}です（${w.label}になりました）。期限までに教習を終えられるよう、空き時間の入力をお願いします。`,
+        `${appUrl}student.html?t=${encodeURIComponent(tok)}`) ? 1 : 0;
     });
   });
-  const appUrl = prop('APP_URL'); let n = 0;
+  let ni = 0;
   Object.keys(byInst).forEach(uid => {
     const path = `instructors/${uid}`, t = getDoc_(path); if (!t) return;
     const list = byInst[uid];
-    n += deliver_(path, t.fcmTokens, `期限が近い教習生が${list.length}件あります`, list.slice(0, 5).join('、') + (list.length > 5 ? ` ほか${list.length - 5}件` : ''), `${appUrl}manage.html`) ? 1 : 0;
+    ni += deliver_(path, t.fcmTokens, `期限が近い教習生が${list.length}件あります`, list.slice(0, 5).join('、') + (list.length > 5 ? ` ほか${list.length - 5}件` : ''), `${appUrl}manage.html`) ? 1 : 0;
   });
-  Logger.log(`期限のお知らせ：指導員${n}人に送信`);
+  Logger.log(`期限のお知らせ：教習生${ns}人・指導員${ni}人に送信`);
 }
 
 /* ---------- 動作確認用：自分の端末にテスト通知 ---------- */
