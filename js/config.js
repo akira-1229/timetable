@@ -20,8 +20,8 @@ self.APP_CONFIG = {
   // Cloud Messaging → ウェブプッシュ証明書 → 鍵ペア
   vapidKey: "ここに貼り付け",
 
-  // GitHub Pagesの公開URL（最後に / を付ける）例: https://ユーザー名.github.io/timetable/
-  appUrl: "https://akira-1229.github.io/timetable/",
+  // GitHub Pagesの公開URL（最後に / を付ける）例: https://ユーザー名.github.io/time-table/
+  appUrl: "https://akira-1229.github.io/time-table/",
 
   schoolName: "聖徳自動車学園",
   schoolTel: "000-000-0000",        // キャンセル連絡用の電話番号

@@ -11,10 +11,10 @@
 | `firestore.indexes.json` | 検索用の索引の定義 | 参考（作り方は手順5） |
 | `apps-script/` | 通知を送る係 | Google Apps Script |
 
-画面のURLは次のとおりです（`ユーザー名` と `timetable` は自分の環境に読み替え）。
+画面のURLは次のとおりです（`ユーザー名` と `time-table` は自分の環境に読み替え）。
 
-- 指導員：`https://ユーザー名.github.io/timetable/instructor.html`（管理画面の「指導員」タブで、指導員用のQRカードも印刷できます）
-- 管理：`https://ユーザー名.github.io/timetable/admin.html`
+- 指導員：`https://ユーザー名.github.io/time-table/instructor.html`（管理画面の「指導員」タブで、指導員用のQRカードも印刷できます）
+- 管理：`https://ユーザー名.github.io/time-table/admin.html`
 - 教習生：QRコードから開く（`student.html?t=本人用のキー`）
 
 ## 0. まずデモモードで画面を確認する（Firebaseなしで動く）
@@ -25,7 +25,7 @@
 2. 「Add file」→「Upload files」で、`web` フォルダの **中身** をすべてドラッグ＆ドロップ →「Commit changes」
    - `css`・`js`・`icons` のフォルダごとドラッグすれば、フォルダの形のまま上がります
 3. 「Settings」→「Pages」→ Branch を `main`・`/(root)` にして「Save」
-4. 数分後に `https://ユーザー名.github.io/timetable/` を開く → デモの入口が表示されれば完了
+4. 数分後に `https://ユーザー名.github.io/time-table/` を開く → デモの入口が表示されれば完了
 
 | 画面 | デモのログイン |
 | --- | --- |
@@ -110,7 +110,7 @@
 1. GitHubで新しいリポジトリを作る（例：`timetable`）
 2. `web` フォルダの **中身** をすべてアップロード（`.nojekyll` も含める）
 3. リポジトリの「Settings」→「Pages」→ Branch を `main` / `(root)` にして保存
-4. 数分後、`https://ユーザー名.github.io/timetable/` が開ければ完了
+4. 数分後、`https://ユーザー名.github.io/time-table/` が開ければ完了
 
 ## 8. 指導員と教習生を登録する
 

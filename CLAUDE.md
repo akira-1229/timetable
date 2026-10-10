@@ -17,7 +17,7 @@
 
 ## 構成
 
-リポジトリ名は **timetable**（公開URL：`https://ユーザー名.github.io/timetable/`）。QRコードにこのURLが入るため、**QRを配った後はリポジトリ名を変えないこと**（変えると配ったQRが全部使えなくなる）。
+リポジトリ名は **time-table**（2026年10月に timetable から変更。公開URL：`https://akira-1229.github.io/time-table/`）。QRコードにこのURLが入るため、**QRを配った後はリポジトリ名を変えないこと**（変えると配ったQRが全部使えなくなる）。
 
 | 役割 | 使うもの | 場所 |
 | --- | --- | --- |
