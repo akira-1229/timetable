@@ -3,7 +3,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError , DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 const root = document.getElementById("app");
@@ -53,9 +53,9 @@ function renderStudents() {
   let h = `<section class="panel noprint"><div class="body">
   <div class="tools" style="grid-template-columns:1fr 1fr 1fr"><button class="btn primary" data-act="new">教習生を追加</button><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button><button class="btn" data-act="selAll">表示中を全選択</button></div>
   <div class="field" style="margin-top:10px"><label for="flt">絞り込み（名前・番号・担当）</label><input id="flt" value="${esc(S.filter)}"></div>
-  <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>担当</th><th>教習期限</th><th>状態</th><th></th></tr></thead><tbody>`;
+  <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>担当</th><th>進み具合</th><th>教習期限</th><th>状態</th><th></th></tr></thead><tbody>`;
   list.forEach(s => {
-    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}</td><td>${s.stage}</td><td>${esc(iname(s.instructorUid))}</td><td>${esc(s.deadline || "")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td><td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
+    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}</td><td>${s.stage}</td><td>${esc(iname(s.instructorUid))}</td><td>${doneOf(s)}/${lessonMin(s.stage)}</td><td>${esc(s.deadline || "")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td><td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
   });
   h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   h += `<div id="printArea"></div>`;
@@ -86,6 +86,9 @@ function editSheet(s) {
   <div class="field"><label for="f_in">担当指導員</label><select id="f_in"><option value="">選んでください</option>${S.instructors.map(i => `<option value="${esc(i.uid)}" ${i.uid === s.instructorUid ? "selected" : ""}>${esc(i.name)}</option>`).join("")}</select></div></div>
   <div class="row"><div class="field"><label for="f_dl">教習期限</label><input id="f_dl" type="date" value="${esc(s.deadline || "")}"></div>
   <div class="field"><label for="f_ac">状態</label><select id="f_ac"><option value="1" ${s.active !== false ? "selected" : ""}>利用中</option><option value="0" ${s.active === false ? "selected" : ""}>停止</option></select></div></div>
+  <div class="row"><div class="field"><label for="f_pd">この段階で、システムを使う前に受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div>
+  <div class="field"><label for="f_kd">危険予測</label><select id="f_kd"><option value="0" ${s.kikenDone ? "" : "selected"}>まだ</option><option value="1" ${s.kikenDone ? "selected" : ""}>受講済み</option></select></div></div>
+  <p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：システムを使う前の分 ${s.priorDone || 0}＋システムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数と危険予測は0から数え直します。</p>
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
   ${isNew ? "" : `<button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
@@ -150,6 +153,16 @@ document.addEventListener("click", async e => {
         deadline: document.getElementById("f_dl").value || null, active: document.getElementById("f_ac").value === "1"
       };
       if (!data.name || !data.instructorUid) return toast("名前と担当指導員は必須です");
+      data.priorDone = Math.max(0, Math.floor(+document.getElementById("f_pd").value || 0));
+      data.kikenDone = document.getElementById("f_kd").value === "1";
+      const old = t.dataset.s ? S.students.find(x => x.token === t.dataset.s) : null;
+      if (old && old.stage !== data.stage) {
+        // 段階が変わったら、その段階の時限数は0から数え直す（入力欄を変えていなければ0にする）
+        if (data.priorDone === (old.priorDone || 0)) data.priorDone = 0;
+        if (data.kikenDone === !!old.kikenDone) data.kikenDone = false;
+        data.doneCount = 0;
+      }
+      if (!old) data.doneCount = 0;
       t.disabled = true;
       if (t.dataset.s) await updateDoc(doc(db, "students", t.dataset.s), data);
       else await setDoc(doc(db, "students", newToken()), { ...data, createdAt: serverTimestamp() });

@@ -24,6 +24,41 @@ export const md = s => { const d = parseDate(s); return `${d.getMonth() + 1}月$
 export const label = (s, p) => `${md(s)} ${p}限`;
 export const slotKey = (day, p) => `${day}-${p}`;                    // 月ごとの空き時間の保存キー
 
+/* ---------- 教習の進み具合（何時限目か） ---------- */
+// 実施済み＝priorDone（このシステムを使う前の分。管理画面で入力）＋ doneCount（実施チェックの分）
+// まだ実施チェックの済んでいない予約を日時の順に並べて、何時限目になるかを数える
+// 危険予測は2時限で1つと数える。単独高速は2時限として数える
+export const lessonMin = stage => ((CFG.lessons || {})[stage] || {}).min || 0;
+export const kikenNoOf = stage => ((CFG.lessons || {})[stage] || {}).kikenNo || 0;
+export const doneOf = st => (st.priorDone || 0) + (st.doneCount || 0);
+export const bookingEnd = b => { const [h, m] = P[b.period][1].split(":").map(Number); const d = parseDate(b.date); d.setHours(h, m); return d; };
+// 予約の一覧を「教習1つ」ごとにまとめる（2時限連続の教習は1つにまとめる）
+export function lessonItems(list) {
+  const items = [], byPair = {};
+  [...list].sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period).forEach(b => {
+    if (b.pairId && byPair[b.pairId]) { byPair[b.pairId].bookings.push(b); return; }
+    const it = { date: b.date, period: b.period, lessonType: b.lessonType || "", highway: !!b.highway, bookings: [b], units: b.lessonType === "hwSolo" ? 2 : 1 };
+    if (b.pairId) byPair[b.pairId] = it;
+    items.push(it);
+  });
+  return items;
+}
+// 予定の教習に番号を付ける。ok:false は危険予測の順番がずれている
+export function lessonPlan(st, pending) {
+  const items = lessonItems(pending); let n = doneOf(st);
+  items.forEach(it => { it.no = n + 1; n += it.units; });
+  const K = kikenNoOf(st.stage);
+  let ok = true, reason = "";
+  if (K && !st.kikenDone) {
+    const kk = items.filter(it => it.lessonType === "kiken");
+    const at = items.find(it => it.no <= K && K < it.no + it.units);
+    if (kk.some(it => it.no !== K)) { ok = false; reason = `${(CFG.kiken || {}).label || "危険予測"}が${kk.find(it => it.no !== K).no}時限目になっています（${K}時限目のみ）`; }
+    else if (at && at.lessonType !== "kiken") { ok = false; reason = `${K}時限目は${(CFG.kiken || {}).label || "危険予測"}です（今は${at.lessonType ? "別の教習" : "通常の教習"}が入っています）`; }
+    else if (!at && doneOf(st) >= K) { ok = false; reason = `${(CFG.kiken || {}).label || "危険予測"}を受けないまま${K}時限を超えています`; }
+  }
+  return { items, total: n, ok, reason };
+}
+
 /* ---------- 画面の小物 ---------- */
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

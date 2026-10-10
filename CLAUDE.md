@@ -64,9 +64,9 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
 | `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt` | 管理者／本人は fcmTokens・ackAt のみ／担当指導員は lastNotifiedAt のみ |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でシステム導入前に受けた時限数）, doneCount（実施チェックした時限数）, kikenDone` | 管理者／本人は fcmTokens・ackAt のみ／担当指導員は lastNotifiedAt・doneCount・kikenDone のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
-| `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"), pairId` | 担当指導員（本人は cancelRequested のみ） |
+| `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
 | `outbox/{id}` | 通知の送信待ち `to(student/instructor), type, studentToken, instructorUid, title, body, sent` | 指導員（教習生宛）／教習生（キャンセル希望のみ指導員宛）。読み出しは Apps Script だけ |
 
@@ -79,8 +79,10 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 3. 「この週の予約を確定して通知」→ 教習生1人につき **週1回まとめて** 通知
 4. 確定後の追加・取り消し・キャンセル承認/却下は **その都度** 通知
 5. 予約済みの枠は教習生側でロック（教習生画面も確定・取り消しを `onSnapshot` でリアルタイム反映）。教習生は「キャンセル希望」を送れる（指導員に通知）→ 指導員が承認/却下
-6. 教習生は通知を見たら「確認しました」。`lastNotifiedAt > ackAt` の人を指導員画面に未確認として出し、手動で再通知できる
-7. 毎朝9時、締切の3日前と前日に、次月分が未入力の教習生だけへ通知（Apps Script）
+6. 教習が終わったら、担当指導員が「実施」か「欠席」をチェック（指導員画面の上に未チェックの一覧）。実施は `doneCount` に足す（危険予測は2時限で1、単独高速は2）。欠席は教習生に通知（outbox type `absent`）。付け間違いは予約の詳細から取り消せる
+7. 進み具合：受講済み＝`priorDone`＋`doneCount`。未チェックの予約を日時順に並べて「何時限目か」を付ける（`common.js` の `lessonPlan`）。教習生画面の「予約・進み具合」タブと、指導員画面・管理画面に表示。段階を変えると0から数え直す
+8. 教習生は通知を見たら「確認しました」。`lastNotifiedAt > ackAt` の人を指導員画面に未確認として出し、手動で再通知できる
+9. 毎朝9時、締切の3日前と前日に、次月分が未入力の教習生だけへ通知（Apps Script）
 
 ## 割り当てルール（確定済み。`config.js` と `instructor.js` の `evaluate` / `evaluatePair`）
 
@@ -96,6 +98,8 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | 危険予測 | 2時限連続の特別な教習（`lessonType: "kiken"`、2件を `pairId` で1組）。昼休み・20分休憩をまたぐ組（3・4、5・6、8・9）は **絶対に不可**。可：1・2／2・3／4・5／6・7／7・8／9・10。ほかの予約と合わせて連続3時限になる組も不可。取り消しは2時限まとめて | `kiken.noPairAfter: [3,5,8]` |
 | 単独高速 | 1人で高速教習を2時限連続（`lessonType: "hwSolo"`、`highway: true`、2件を `pairId` で1組）。単独でも入れられる。昼休みをまたぐ 3・4 だけ不可（5・6、8・9 はOK）。ほかの予約と合わせて連続3時限になる組は不可。取り消しは2時限まとめて | `hwSolo.noPairAfter: [3]` |
 | 危険予測→単独高速 | 危険予測 4・5限 → 単独高速 6・7限 の組に限り、1日4時限・連続でもOK（段階を問わず。1日の上限も超えてよい）。順番は危険予測→単独高速のみで、単独高速の直後に危険予測は不可 | `pairCombos` |
+| 最低教習時限 | 第1段階 12、第2段階 19（12時限目が危険予測、13〜15が高速教習。単独高速なら13・14で、その後15〜19）。超えると延長料金。危険予測は2時限使うが1時限として数える | `lessons` |
+| 危険予測の順番 | **ちょうど12時限目のみ**。12時限目に通常や単独高速が来る予約、危険予測が12時限目からずれる予約は入れられない。欠席などで既にずれている時は警告を出し、直す操作は止めない | `lessons[2].kikenNo` |
 | 段階 | 第1段階には高速教習・危険予測・単独高速は無い（依頼者確認済み） | `specialStages: [2]` |
 | 単独高速の日没警告 | 日没が早い期間は 7・8／8・9／9・10（8限にかかる組）を警告。確認すれば強制で入れられる（`forced: true`） | `darkSeason.hwSoloSets` |
 
@@ -128,6 +132,7 @@ Firebase の準備ができたら `demo: false` にして Firebase の値を入�
 - [ ] 予約を入れる曜日（今は月〜土。日曜を含むか）
 - [ ] 第1段階の連続2時限に制限があるか（今は制限なし）
 - [ ] 指導員が「確定」する期限
+- [ ] 高速教習も「ちょうど13時限目から」に縛るか（今は危険予測だけ番号を見ている）
 
 ## 今後やること（候補）
 

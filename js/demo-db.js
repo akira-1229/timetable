@@ -82,6 +82,7 @@ export const where = (f, op, v) => ({ f, op, v });
 export const query = (c, ...w) => ({ ...c, w });
 export const serverTimestamp = () => Timestamp.now();
 export const arrayUnion = (...v) => ({ __union: v });
+export const increment = n => ({ __inc: n });
 const delay = () => new Promise(r => setTimeout(r, 60));
 export async function getDoc(r) { await delay(); return { id: r.id, ref: r, exists: () => DB.has(r.path), data: () => out(DB.get(r.path)) }; }
 export async function getDocs(q) { await delay(); return runQuery(q); }
@@ -91,12 +92,12 @@ function runQuery(q) {
     const seg = p.split("/");
     if (q.type === "col") { if (seg.slice(0, -1).join("/") !== q.path) continue; }
     else if (seg.at(-2) !== q.id || seg.length % 2) continue;
-    if ((q.w || []).every(w => w.op === "==" ? d[w.f] === w.v : w.op === "in" ? w.v.includes(d[w.f]) : true))
+    if ((q.w || []).every(w => w.op === "==" ? (d[w.f] ?? null) === w.v : w.op === "in" ? w.v.includes(d[w.f]) : true))
       res.push({ id: seg.at(-1), ref: mkDoc(p), data: () => out(d) });
   }
   return { docs: res, size: res.length, empty: !res.length };
 }
-const merge = (cur, d) => { const n = { ...cur }; Object.entries(d).forEach(([k, v]) => { n[k] = v && v.__union ? [...new Set([...(cur[k] || []), ...v.__union])] : v; }); return n; };
+const merge = (cur, d) => { const n = { ...cur }; Object.entries(d).forEach(([k, v]) => { n[k] = v && v.__union ? [...new Set([...(cur[k] || []), ...v.__union])] : v && v.__inc !== undefined ? (cur[k] || 0) + v.__inc : v; }); return n; };
 export async function setDoc(r, d) { DB.set(r.path, merge({}, d)); persist(); notify(); }
 export async function updateDoc(r, d) { if (!DB.has(r.path)) throw Object.assign(new Error("not found"), { code: "not-found" }); DB.set(r.path, merge(DB.get(r.path), d)); persist(); notify(); }
 export async function addDoc(c, d) { const r = mkDoc(`${c.path}/${rid()}`); DB.set(r.path, merge({}, d)); persist(); notify(); return r; }

@@ -41,7 +41,7 @@ service cloud.firestore {
       allow list: if isAdmin() || (isInstructor() && resource.data.instructorUid == request.auth.uid);
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-        || (isInstructor() && resource.data.instructorUid == request.auth.uid && changedOnly(['lastNotifiedAt']))
+        || (isInstructor() && resource.data.instructorUid == request.auth.uid && changedOnly(['lastNotifiedAt', 'doneCount', 'kikenDone']))
         || (resource.data.active == true && changedOnly(['fcmTokens', 'ackAt']) && validTokens());
 
       // 月ごとの空き時間

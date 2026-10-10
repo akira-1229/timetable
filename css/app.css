@@ -114,6 +114,8 @@ table.wk{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fix
 .heatleg i{width:14px;height:14px;border-radius:4px;display:inline-block;border:1.5px solid}
 .wc.bk{background:var(--orange);border-color:var(--orange);color:#fff}
 .wc.bk.draft{background:var(--orange-soft);color:var(--lock)}
+.wc.bk.done{background:var(--green-soft);border-color:var(--green);color:var(--green)}
+.wc.bk.absent{background:var(--bg);border-color:var(--line);color:var(--muted);text-decoration:line-through}
 .wc.bk.gone{background:var(--lv3-soft);border-color:var(--lv3);color:var(--lv3)}
 .wc.cand{background:var(--blue);border-color:var(--blue);color:#fff}
 .wc.off{opacity:.35}
@@ -152,3 +154,8 @@ select{border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font:
 
 .wc.cand.hw{background:var(--orange);border-color:var(--orange)}
 .wc.cand.kk{background:var(--green);border-color:var(--green)}
+
+.prog{background:var(--bg);border-radius:12px;padding:12px;margin-bottom:12px}
+.prog .bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin:8px 0 4px}
+.prog .bar i{display:block;height:100%;background:var(--green)}
+.prog .bar i.over{background:var(--orange)}

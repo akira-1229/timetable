@@ -5,7 +5,7 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall
+  installButton, firstVisitInstall, lessonPlan, lessonMin, doneOf
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -68,7 +68,7 @@ function render() {
     <span>${installButton()}<button class="linkbtn" data-act="push">通知の設定</button></span></div>
   <section class="panel"><div class="tabs" role="tablist">
     <button role="tab" aria-selected="${S.tab === "cal"}" data-act="tab" data-v="cal">空き時間</button>
-    <button role="tab" aria-selected="${S.tab === "book"}" data-act="tab" data-v="book">予約${unacked() ? '<span class="dot">!</span>' : ""}</button>
+    <button role="tab" aria-selected="${S.tab === "book"}" data-act="tab" data-v="book">予約・進み具合${unacked() ? '<span class="dot">!</span>' : ""}</button>
   </div><div class="body">`;
   h += S.tab === "cal" ? renderCal() : renderBook();
   app.innerHTML = h + `</div></section>`;
@@ -115,17 +115,29 @@ function renderCal() {
 
 function renderBook() {
   const t0 = dateStr(now);
-  const up = S.bookings.filter(b => b.status === "confirmed" && b.date >= t0).sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period);
+  const st = S.student, min = lessonMin(st.stage), done = doneOf(st);
+  const plan = lessonPlan(st, S.bookings.filter(b => b.status === "confirmed" && !b.result && (b.stage ?? st.stage) === st.stage));
+  const noOf = b => { const it = plan.items.find(x => x.bookings.some(y => y.id === b.id)); if (!it) return ""; const n = it.units > 1 ? it.no + (it.bookings[0].id === b.id ? 0 : 1) : it.no; return `${n}時限目${n > min ? "（延長）" : ""}`; };
+  const up = S.bookings.filter(b => b.status === "confirmed" && !b.result && b.date >= t0).sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period);
   const can = S.bookings.filter(b => b.status === "cancelled" && b.date >= t0);
+  const absent = S.bookings.filter(b => b.result === "absent").sort((a, b) => b.date.localeCompare(a.date) || a.period - b.period);
   let h = "";
+  if (min) {
+    const pct = Math.min(100, Math.round(done / min * 100));
+    h += `<div class="prog"><div style="font-size:13px;color:var(--muted)">第${st.stage}段階の進み具合</div>
+      <div><b style="font-size:22px">${done}</b> / ${min}時限<span style="font-size:12px;color:var(--muted)">（最低教習時限）</span></div>
+      <div class="bar"><i class="${done > min ? "over" : ""}" style="width:${pct}%"></i></div>
+      <div style="font-size:12px;color:var(--muted)">受講済み ${done}時限${plan.items.length ? `・予約済み ${plan.total - done}時限` : ""}${done >= min ? "・最低教習時限に達しました" : `・あと${min - done}時限`}</div></div>`;
+  }
   if (!up.length) h += `<div class="banner info">これからの予約はまだありません。指導員が予約を確定すると、ここに表示され通知が届きます。</div>`;
   else {
     h += `<h3 style="margin-top:0">これからの予約</h3><div class="list">`;
     up.forEach(b => {
-      h += `<div class="item"><div><div class="t">${label(b.date, b.period)}</div><div class="s">${P[b.period][0]}〜${P[b.period][1]}${b.lessonType === "kiken" ? `・${esc((CFG.kiken || {}).label || "危険予測")}` : b.lessonType === "hwSolo" ? `・${esc((CFG.hwSolo || {}).label || "単独高速")}` : b.highway ? "・高速教習" : ""}</div></div>${b.cancelRequested ? '<span class="tag wait">キャンセル希望中</span>' : ""}</div>`;
+      h += `<div class="item"><div><div class="t">${label(b.date, b.period)}</div><div class="s">${noOf(b) ? `${noOf(b)}・` : ""}${P[b.period][0]}〜${P[b.period][1]}${b.lessonType === "kiken" ? `・${esc((CFG.kiken || {}).label || "危険予測")}` : b.lessonType === "hwSolo" ? `・${esc((CFG.hwSolo || {}).label || "単独高速")}` : b.highway ? "・高速教習" : ""}</div></div>${b.cancelRequested ? '<span class="tag wait">キャンセル希望中</span>' : ""}</div>`;
     });
     h += `</div>`;
   }
+  if (absent.length) h += `<h3>欠席になった教習</h3><div class="hist">${absent.slice(0, 5).map(b => `<div>${label(b.date, b.period)}</div>`).join("")}</div>`;
   if (unacked()) h += `<button class="btn primary full" style="margin-top:12px" data-act="ack">確認しました</button>`;
   else if (up.length) h += `<div class="banner ok" style="margin-top:12px">確認済みです。</div>`;
   if (can.length) {
