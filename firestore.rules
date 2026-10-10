@@ -3,7 +3,7 @@ rules_version = '2';
 // 空き時間登録システム セキュリティルール
 // ・教習生：QRのキー（students/{t} の t）を知っている本人だけが、自分の分を読み書きできる
 //           一覧の取得はできない。書き換えられる項目も限定
-// ・指導員：instructors に登録された職員だけ。自分の担当の教習生だけ見られる
+// ・指導員：instructors に登録された職員だけ。自分の担当の教習生だけ見られる。担当の教習生の登録・編集・削除もできる
 // ・管理者：admins に登録された職員だけ。すべて操作できる
 // ・通知の送信（Apps Script）はサービスアカウントで動くため、このルールの対象外
 // =============================================================
@@ -39,22 +39,23 @@ service cloud.firestore {
     match /students/{t} {
       allow get: if true;   // キーを知っている人だけが取得できる（推測できない長さのキー）
       allow list: if isAdmin() || (isInstructor() && resource.data.instructorUid == request.auth.uid);
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin() || (isInstructor() && request.resource.data.instructorUid == request.auth.uid);
+      allow delete: if isAdmin() || (isInstructor() && resource.data.instructorUid == request.auth.uid);
       allow update: if isAdmin()
-        || (isInstructor() && resource.data.instructorUid == request.auth.uid && changedOnly(['lastNotifiedAt', 'doneCount', 'kikenDone']))
+        || (isInstructor() && resource.data.instructorUid == request.auth.uid && request.resource.data.instructorUid == request.auth.uid)
         || (resource.data.active == true && changedOnly(['fcmTokens', 'ackAt']) && validTokens());
 
       // 月ごとの空き時間
       match /months/{ym} {
         allow get: if true;
         allow list: if isAdmin() || ownsStudent(t);
-        allow create, update: if isAdmin()
+        allow create, update: if isAdmin() || ownsStudent(t)
           || (studentData(t).active == true
               && ym.matches('^[0-9]{4}-[0-9]{2}$')
               && request.resource.data.keys().hasOnly(['slots', 'updatedAt', 'late'])
               && request.resource.data.slots is list
               && request.resource.data.slots.size() <= 310);
-        allow delete: if isAdmin();
+        allow delete: if isAdmin() || ownsStudent(t);
       }
 
       // 予約（教習生には確定・取り消しだけが見える。下書きは見えない）
@@ -63,7 +64,7 @@ service cloud.firestore {
         allow create: if isAdmin()
           || (ownsStudent(t)
               && request.resource.data.instructorUid == request.auth.uid
-              && request.resource.data.status in ['draft', 'confirmed']);
+              && request.resource.data.status in ['draft', 'confirmed', 'cancelled']);
         allow update: if isAdmin()
           || (ownsStudent(t)
               && resource.data.instructorUid == request.auth.uid
@@ -71,7 +72,7 @@ service cloud.firestore {
           || (resource.data.status == 'confirmed'
               && changedOnly(['cancelRequested', 'cancelRequestedAt'])
               && request.resource.data.cancelRequested == true);
-        allow delete: if isAdmin() || (ownsStudent(t) && resource.data.status == 'draft');
+        allow delete: if isAdmin() || ownsStudent(t);
       }
     }
 

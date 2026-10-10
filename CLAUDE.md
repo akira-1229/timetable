@@ -36,7 +36,8 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   index.html               入口（指導員・管理画面へのリンク）。Firebase切り替え前は並べて確認ページへのリンクとデータ初期化ボタンも出す
   student.html             教習生（QRの ?t=キー で開く。ログインなし）
   instructor.html          指導員（ログイン必須）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
-  admin.html               管理（ログイン必須）。教習生用・指導員用のQRカードを印刷。qrcodejs を cdnjs から読み込む
+  admin.html               大元の管理（管理者ログイン）。指導員の登録・削除と指導員用QR、教習生の一覧と担当の付け替え、設定の確認。qrcodejs を cdnjs から読み込む
+  manage.html              担当指導員の管理（指導員ログイン）。自分の担当の教習生の登録・編集・削除、QRカードの印刷・再発行。指導員画面の「教習生の管理」から開く
   check.html               Firebase切り替え前の確認用。指導員と教習生の画面を並べて反映を確認する
   firebase-messaging-sw.js 通知用サービスワーカー（compat SDK）。ホーム画面に追加できるよう全画面で登録する（デモでは Firebase を読み込まない）
   manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
@@ -48,7 +49,8 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   js/common.js             初期化、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
   js/student.js            教習生画面
   js/instructor.js         指導員画面（ルール判定の本体）
-  js/admin.js              管理画面
+  js/admin.js              大元の管理画面
+  js/manage.js             担当指導員の管理画面
 firestore.rules            セキュリティルール
 firestore.indexes.json     必要な索引（コレクショングループ2つ＋students）
 apps-script/Code.gs        通知係（outbox の送信、締切前リマインド、テスト送信）
@@ -64,7 +66,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
 | `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でシステム導入前に受けた時限数）, doneCount（実施チェックした時限数）, kikenDone` | 管理者／本人は fcmTokens・ackAt のみ／担当指導員は lastNotifiedAt・doneCount・kikenDone のみ |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でシステム導入前に受けた時限数）, doneCount（実施チェックした時限数）, kikenDone` | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
 | `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
