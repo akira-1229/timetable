@@ -170,3 +170,34 @@ if (typeof document !== "undefined") document.addEventListener("click", async e 
     if (!r || r.outcome !== "accepted") installSheet(document.body.dataset.app || "student");
   }
 });
+
+/* ---------- PC表示とスマホ表示（管理画面） ---------- */
+// 幅1024px以上ならPC表示。画面の切り替えボタンで固定もできる（この端末に覚える）
+const VIEW_KEY = "timetable_view";
+export function isPC() {
+  let v = null; try { v = localStorage.getItem(VIEW_KEY); } catch (e) { }
+  if (v === "pc") return true; if (v === "sp") return false;
+  return typeof matchMedia !== "undefined" && matchMedia("(min-width: 1024px)").matches;
+}
+export const applyView = () => document.body.classList.toggle("pc", isPC());
+export const viewToggle = () => `<button class="linkbtn noprint" data-act="toggleView">${isPC() ? "スマホ表示にする" : "PC表示にする"}</button>`;
+export function onViewChange(cb) {
+  applyView();
+  matchMedia("(min-width: 1024px)").addEventListener("change", () => { applyView(); cb(); });
+  document.addEventListener("click", e => {
+    if (!e.target.closest('[data-act="toggleView"]')) return;
+    try { localStorage.setItem(VIEW_KEY, isPC() ? "sp" : "pc"); } catch (err) { }
+    applyView(); cb();
+  });
+}
+// PC表示の表：列の定義から作る。並べ替えは見出しをクリック
+export function pcTable(cols, rows, sort) {
+  const sorted = [...rows];
+  if (sort && sort.k) {
+    const c = cols.find(x => x.k === sort.k), val = r => c.sort ? c.sort(r) : (c.v ? c.v(r) : r[c.k]);
+    sorted.sort((a, b) => { const x = val(a) ?? "", y = val(b) ?? ""; return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "ja")) * (sort.dir || 1); });
+  }
+  return `<div class="pctable"><table class="adm"><thead><tr>${cols.map(c => `<th>${c.k && c.nosort !== true ? `<button class="th" data-act="sort" data-k="${c.k}">${c.t}${sort && sort.k === c.k ? (sort.dir > 0 ? " ▲" : " ▼") : ""}</button>` : c.t}</th>`).join("")}</tr></thead>
+  <tbody>${sorted.map(r => `<tr>${cols.map(c => `<td>${c.html ? c.html(r) : esc(c.v ? c.v(r) : r[c.k] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+export const nextSort = (sort, k) => sort.k === k ? { k, dir: -sort.dir } : { k, dir: 1 };

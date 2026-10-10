@@ -4,11 +4,11 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, serverTimestamp
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 const root = document.getElementById("app");
-const S = { uid: null, tab: "instructors", instructors: [], students: [], filter: "" };
+const S = { uid: null, tab: "instructors", instructors: [], students: [], filter: "", sort: { k: "name", dir: 1 } };
 
 const instructorUrl = i => `${CFG.appUrl}instructor.html${i.email ? `?e=${encodeURIComponent(i.email)}` : ""}`;
 const iname = uid => (S.instructors.find(i => i.uid === uid) || {}).name || "（未設定）";
@@ -19,6 +19,7 @@ function renderLogin(msg = "") {
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password"></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}<button class="btn primary full" data-act="login">ログイン</button></form></div></section>`;
 }
+onViewChange(render);
 onAuthStateChanged(auth, async user => {
   if (!user) { renderLogin(); return; }
   S.uid = user.uid;
@@ -37,10 +38,50 @@ async function loadAll() {
 }
 
 function render() {
+  if (!S.uid) return;
+  if (isPC()) return renderPC();
   let h = `<div class="topbar noprint"><div><h1>管理画面</h1><small>${esc(CFG.schoolName)}</small></div><button class="linkbtn" data-act="logout">ログアウト</button></div>
   <div class="seg noprint" role="group"><button aria-pressed="${S.tab === "instructors"}" data-act="tab" data-v="instructors">指導員（${S.instructors.length}人）</button><button aria-pressed="${S.tab === "students"}" data-act="tab" data-v="students">教習生（${S.students.length}人）</button><button aria-pressed="${S.tab === "settings"}" data-act="tab" data-v="settings">設定</button></div>`;
   h += S.tab === "students" ? renderStudents() : S.tab === "settings" ? renderSettings() : renderInstructors();
-  root.innerHTML = h;
+  root.innerHTML = h + `<p class="center noprint">${viewToggle()}</p>`;
+}
+
+// PC表示：左にメニュー、右に表。指導員の登録フォームは表の横に並べる
+const assignSelect = s => `<select data-act="reassign" data-s="${s.token}" aria-label="${esc(s.name)}の担当">${S.instructors.map(i => `<option value="${esc(i.uid)}" ${i.uid === s.instructorUid ? "selected" : ""}>${esc(i.name)}</option>`).join("")}${S.instructors.some(i => i.uid === s.instructorUid) ? "" : `<option value="" selected>（未設定）</option>`}</select>`;
+function renderPC() {
+  const nav = [["instructors", `指導員（${S.instructors.length}人）`], ["students", `教習生（${S.students.length}人）`], ["settings", "設定"]];
+  let main = "";
+  if (S.tab === "instructors") {
+    const cols = [
+      { k: "name", t: "名前" }, { k: "email", t: "メールアドレス" }, { k: "uid", t: "ユーザーUID" },
+      { k: "count", t: "担当", v: i => `${S.students.filter(s => s.instructorUid === i.uid).length}人`, sort: i => S.students.filter(s => s.instructorUid === i.uid).length },
+      { t: "", html: i => `<button class="btn" data-act="delInst" data-u="${esc(i.uid)}" style="color:var(--orange)">削除</button>` }
+    ];
+    main = `<h2>指導員</h2><div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start">
+      <div>${pcTable(cols, S.instructors, S.sort)}
+        <div class="pctool" style="margin-top:12px"><button class="btn" data-act="printInst" ${S.instructors.length ? "" : "disabled"}>指導員用のQRカードを印刷（${S.instructors.length}人）</button></div></div>
+      <section class="panel" style="margin-top:0"><div class="body"><h3 style="margin-top:0">指導員を登録</h3>
+        <p style="font-size:12px;color:var(--muted);margin-top:0">ログイン用アカウントは、Firebaseコンソールの Authentication →「ユーザーを追加」で作り、表示された「ユーザーUID」をここに登録します。</p>
+        <div class="field"><label for="iu">ユーザーUID</label><input id="iu"></div><div class="field"><label for="in">名前</label><input id="in"></div><div class="field"><label for="ie">メールアドレス</label><input id="ie" type="email"></div>
+        <button class="btn primary full" data-act="addInst">登録する</button></div></section></div>`;
+  } else if (S.tab === "students") {
+    const f = S.filter.trim();
+    const list = S.students.filter(s => !f || String(s.name).includes(f) || String(s.studentNo).includes(f) || iname(s.instructorUid).includes(f));
+    const cols = [
+      { k: "studentNo", t: "番号" }, { k: "name", t: "名前" }, { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" },
+      { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
+      { k: "deadline", t: "教習期限" }, { k: "karimenExpiry", t: "仮免期限" },
+      { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
+      { k: "inst", t: "担当", html: assignSelect, sort: s => iname(s.instructorUid) }
+    ];
+    main = `<h2>教習生</h2><p style="font-size:13px;color:var(--muted);margin-top:-6px">教習生の登録・編集・削除・QRカードの印刷は、各指導員の「教習生の管理」で行います。ここでは全員の確認と、担当の付け替えができます。</p>
+      <div class="pctool"><input id="flt" value="${esc(S.filter)}" placeholder="名前・番号・担当で絞り込み" aria-label="絞り込み"><span class="sp"></span><span style="font-size:13px;color:var(--muted)">${list.length}人表示</span></div>
+      ${list.length ? pcTable(cols, list, S.sort) : '<div class="loading">教習生がいません</div>'}`;
+  } else main = `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}`;
+  root.innerHTML = `<div class="pcl"><aside class="pcside noprint"><h1>管理画面</h1><small>${esc(CFG.schoolName)}</small>
+    <nav class="pcnav">${nav.map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}</nav>
+    <div class="foot">${viewToggle()}<button class="linkbtn" data-act="logout">ログアウト</button></div></aside>
+  <main class="pcmain"><div class="noprint">${main}</div><div id="printArea"></div></main></div>`;
 }
 
 function renderStudents() {
@@ -52,7 +93,7 @@ function renderStudents() {
   <div class="gridwrap"><table class="adm"><thead><tr><th>番号</th><th>名前</th><th>段階</th><th>進み具合</th><th>教習期限</th><th>状態</th><th>担当</th></tr></thead><tbody>`;
   list.forEach(s => {
     h += `<tr><td>${esc(s.studentNo)}</td><td>${esc(s.name)}</td><td>${s.stage}</td><td>${doneOf(s)}/${lessonMin(s.stage)}</td><td>${esc(s.deadline || "")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>
-    <td><select data-act="reassign" data-s="${s.token}" aria-label="${esc(s.name)}の担当">${S.instructors.map(i => `<option value="${esc(i.uid)}" ${i.uid === s.instructorUid ? "selected" : ""}>${esc(i.name)}</option>`).join("")}${S.instructors.some(i => i.uid === s.instructorUid) ? "" : `<option value="" selected>（未設定）</option>`}</select></td></tr>`;
+    <td>${assignSelect(s)}</td></tr>`;
   });
   h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   return h;
@@ -115,7 +156,8 @@ document.addEventListener("click", async e => {
   try {
     if (a === "login") { try { await signInWithEmailAndPassword(auth, document.getElementById("em").value.trim(), document.getElementById("pw").value); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); } }
     else if (a === "logout") await signOut(auth);
-    else if (a === "tab") { S.tab = t.dataset.v; render(); }
+    else if (a === "tab") { S.tab = t.dataset.v; S.sort = { k: t.dataset.v === "instructors" ? "name" : "studentNo", dir: 1 }; render(); }
+    else if (a === "sort") { S.sort = nextSort(S.sort, t.dataset.k); render(); }
     else if (a === "printInst") printInstructorCards();
     else if (a === "doPrint") window.print();
     else if (a === "delInst") {

@@ -161,3 +161,33 @@ select{border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font:
 .prog .bar i.over{background:var(--orange)}
 .row>*{min-width:0}
 .field input,.field select{width:100%;min-width:0;box-sizing:border-box}
+/* シートが画面より長い時はシートの中でスクロール */
+.sheet{max-height:92vh;overflow:auto}
+/* ---------- PC表示（管理画面） ---------- */
+body.pc .wrap.wide{max-width:none;padding:0}
+.pcl{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
+.pcside{background:var(--surface);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;box-sizing:border-box;display:flex;flex-direction:column}
+.pcside h1{font-size:17px;margin:0 0 2px}
+.pcside small{color:var(--muted);font-size:12px}
+.pcnav{display:flex;flex-direction:column;gap:4px;margin:18px 0}
+.pcnav button,.pcnav a{text-align:left;border:0;background:transparent;padding:10px 12px;border-radius:10px;font:inherit;font-weight:700;color:var(--ink);text-decoration:none;cursor:pointer}
+.pcnav button:hover,.pcnav a:hover{background:var(--bg)}
+.pcnav [aria-pressed="true"]{background:var(--blue-soft);color:var(--blue)}
+.pcside .foot{margin-top:auto;display:flex;flex-direction:column;align-items:flex-start}
+.pcmain{padding:22px 28px 40px;min-width:0}
+.pcmain h2{margin:0 0 12px;font-size:20px}
+.pctool{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.pctool input{border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;font:inherit;background:var(--surface);color:var(--ink);min-width:260px}
+.pctool .sp{flex:1}
+.pctable{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:auto;max-height:calc(100vh - 170px)}
+body.pc table.adm{font-size:14px}
+body.pc .adm th,body.pc .adm td{padding:8px 10px;white-space:nowrap}
+body.pc .adm thead th{position:sticky;top:0;background:var(--surface);z-index:1;border-bottom:2px solid var(--line)}
+body.pc .adm tbody tr:hover{background:var(--bg)}
+.adm .th{border:0;background:none;font:inherit;color:inherit;padding:0;cursor:pointer}
+body.pc .sheet-bg{justify-content:flex-end;align-items:stretch}
+body.pc .sheet{max-width:600px;max-height:none;height:100vh;border-radius:0;box-sizing:border-box}
+body.pc .sheet .list{max-height:none}
+.pcgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media print{.pcside,.pctool{display:none!important} .pcl{display:block}}
+body.pc #app>section.panel{max-width:480px;margin:60px auto}

@@ -3,11 +3,11 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 const root = document.getElementById("app");
-const S = { uid: null, me: null, students: [], sel: new Set(), filter: "" };
+const S = { uid: null, me: null, students: [], sel: new Set(), filter: "", sort: { k: "studentNo", dir: 1 } };
 
 function newToken() {
   const b = crypto.getRandomValues(new Uint8Array(18));
@@ -21,6 +21,7 @@ function renderLogin(msg = "") {
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password"></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}<button class="btn primary full" data-act="login">ログイン</button></form></div></section>`;
 }
+onViewChange(render);
 onAuthStateChanged(auth, async user => {
   if (!user) { renderLogin(); return; }
   S.uid = user.uid;
@@ -39,10 +40,37 @@ async function loadAll() {
 }
 
 function render() {
+  if (!S.uid) return;
+  if (isPC()) return renderPC();
   let h = `<div class="topbar noprint"><div><h1>教習生の管理</h1><small>${esc(S.me ? S.me.name : "")} 指導員の担当（${S.students.length}人）</small></div>
     <span><a class="linkbtn" href="instructor.html" style="text-decoration:none">割り当てに戻る</a><button class="linkbtn" data-act="logout">ログアウト</button></span></div>`;
   h += renderStudents();
-  root.innerHTML = h;
+  root.innerHTML = h + `<p class="center noprint">${viewToggle()}</p>`;
+}
+const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => !f || String(s.name).includes(f) || String(s.studentNo).includes(f) || String(s.license || "").includes(f)); };
+const ageText = s => s.ageYears != null ? `${s.ageYears}歳${s.ageMonths != null ? `${s.ageMonths}ヶ月` : ""}` : "";
+// PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
+function renderPC() {
+  const list = filtered();
+  const cols = [
+    { t: `<input type="checkbox" data-act="selPage" aria-label="表示中を全選択" ${list.length && list.every(s => S.sel.has(s.token)) ? "checked" : ""}>`, html: s => `<input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">` },
+    { k: "studentNo", t: "番号" }, { k: "name", t: "名前" },
+    { k: "age", t: "年齢", v: ageText, sort: s => (s.ageYears ?? -1) * 12 + (s.ageMonths || 0) }, { k: "gender", t: "性別" },
+    { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
+    { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
+    { k: "startDate", t: "教習開始" }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限" },
+    { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限" },
+    { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
+    { t: "", html: s => `<button class="btn" data-act="edit" data-s="${s.token}">編集</button>` }
+  ];
+  root.innerHTML = `<div class="pcl"><aside class="pcside noprint"><h1>教習生の管理</h1><small>${esc(S.me ? S.me.name : "")} 指導員</small>
+    <nav class="pcnav"><button aria-pressed="true">担当の教習生（${S.students.length}人）</button><a href="instructor.html">予約の割り当てへ</a></nav>
+    <div class="foot">${viewToggle()}<button class="linkbtn" data-act="logout">ログアウト</button></div></aside>
+  <main class="pcmain"><div class="noprint"><h2>担当の教習生</h2>
+    <div class="pctool"><button class="btn primary" data-act="new">＋ 教習生を追加</button><input id="flt" value="${esc(S.filter)}" placeholder="名前・番号・希望免許で絞り込み" aria-label="絞り込み">
+    <span class="sp"></span><span style="font-size:13px;color:var(--muted)">${list.length}人表示・${S.sel.size}人選択中</span><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button></div>
+    ${list.length ? pcTable(cols, list, S.sort) : '<div class="loading">教習生がいません</div>'}</div>
+    <div id="printArea"></div></main></div>`;
 }
 
 function renderStudents() {
@@ -112,16 +140,19 @@ function printCards() {
 }
 
 document.addEventListener("input", e => { if (e.target.id === "flt") { S.filter = e.target.value; const pos = e.target.selectionStart; render(); const f = document.getElementById("flt"); f.focus(); f.setSelectionRange(pos, pos); } });
-document.addEventListener("change", e => { if (e.target.dataset.act === "sel") { const k = e.target.dataset.s; e.target.checked ? S.sel.add(k) : S.sel.delete(k); render(); } });
+document.addEventListener("change", e => {
+  if (e.target.dataset.act === "selPage") { filtered().forEach(s => e.target.checked ? S.sel.add(s.token) : S.sel.delete(s.token)); render(); return; }
+  if (e.target.dataset.act === "sel") { const k = e.target.dataset.s; e.target.checked ? S.sel.add(k) : S.sel.delete(k); render(); } });
 document.addEventListener("click", async e => {
   if (onOverlayClose(e)) return;
-  const t = e.target.closest("[data-act]"); if (!t || t.dataset.act === "sel") return;
+  const t = e.target.closest("[data-act]"); if (!t || t.dataset.act === "sel" || t.dataset.act === "selPage") return;
   const a = t.dataset.act;
   try {
     if (a === "login") { try { await signInWithEmailAndPassword(auth, document.getElementById("em").value.trim(), document.getElementById("pw").value); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); } }
     else if (a === "logout") await signOut(auth);
     else if (a === "new") editSheet(null);
     else if (a === "edit") editSheet(S.students.find(s => s.token === t.dataset.s));
+    else if (a === "sort") { S.sort = nextSort(S.sort, t.dataset.k); render(); }
     else if (a === "selAll") { document.querySelectorAll('[data-act="sel"]').forEach(c => S.sel.add(c.dataset.s)); render(); }
     else if (a === "print") { printCards(); }
     else if (a === "doPrint") window.print();

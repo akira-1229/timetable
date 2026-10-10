@@ -58,6 +58,8 @@ apps-script/appsscript.json
 SETUP.md                   セットアップ手順書（日本語。依頼者が読む）
 ```
 
+管理画面（admin.html・manage.html）は **PC表示とスマホ表示** がある。幅1024px以上で自動的にPC表示（左にメニュー、全項目の表・見出しで並べ替え、編集は右から出るパネル）。画面下／左下のボタンで切り替えると、その端末に覚える（`common.js` の `isPC`・`onViewChange`・`pcTable`）。
+
 画面のコードの書き方：状態はモジュール内の `S` オブジェクト、`render()` で `innerHTML` を丸ごと描き直し、クリックは `data-act` 属性のイベント委譲。画面の文言は丁寧語（です・ます）。
 
 ## データ（Firestore）
