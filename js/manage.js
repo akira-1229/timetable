@@ -51,27 +51,37 @@ function renderStudents() {
   let h = `<section class="panel noprint"><div class="body">
   <div class="tools" style="grid-template-columns:1fr 1fr 1fr"><button class="btn primary" data-act="new">教習生を追加</button><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button><button class="btn" data-act="selAll">表示中を全選択</button></div>
   <div class="field" style="margin-top:10px"><label for="flt">絞り込み（名前・番号）</label><input id="flt" value="${esc(S.filter)}"></div>
-  <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>進み具合</th><th>教習期限</th><th>状態</th><th></th></tr></thead><tbody>`;
+  <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>希望免許</th><th>進み具合</th><th>教習期限</th><th>仮免期限</th><th>状態</th><th></th></tr></thead><tbody>`;
   list.forEach(s => {
-    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}</td><td>${s.stage}</td><td>${doneOf(s)}/${lessonMin(s.stage)}</td><td>${esc(s.deadline || "")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td><td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
+    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}</td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage)}</td><td>${esc(s.deadline || "")}</td><td>${esc(s.karimenExpiry || "")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td><td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
   });
   h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   h += `<div id="printArea"></div>`;
   return h;
 }
 
+// 登録・編集フォーム。日付はすべて YYYY-MM-DD。年齢は登録時点の「○歳○ヶ月」
+const DATES = [["startDate", "教習開始日"], ["classStart", "学科開始日"], ["deadline", "教習期限日"], ["skillStart", "技能開始日"], ["karimenIssued", "仮免交付日"], ["karimenExpiry", "仮免期限日"]];
 function editSheet(s) {
-  const isNew = !s; s = s || { studentNo: "", name: "", stage: 1, instructorUid: "", deadline: "", active: true };
+  const isNew = !s; s = s || { studentNo: "", name: "", stage: 1, active: true };
+  const opt = (v, cur, t = v) => `<option value="${esc(v)}" ${String(cur ?? "") === String(v) ? "selected" : ""}>${esc(t)}</option>`;
   sheet(`<h3>${isNew ? "教習生を追加" : "教習生を編集"}</h3>
-  <div class="row"><div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}"></div>
-  <div class="field"><label for="f_nm">名前</label><input id="f_nm" value="${esc(s.name)}"></div></div>
-  <div class="row"><div class="field"><label for="f_st">段階</label><select id="f_st"><option value="1" ${s.stage == 1 ? "selected" : ""}>第1段階</option><option value="2" ${s.stage == 2 ? "selected" : ""}>第2段階</option></select></div>
-  </div>
-  <div class="row"><div class="field"><label for="f_dl">教習期限</label><input id="f_dl" type="date" value="${esc(s.deadline || "")}"></div>
-  <div class="field"><label for="f_ac">状態</label><select id="f_ac"><option value="1" ${s.active !== false ? "selected" : ""}>利用中</option><option value="0" ${s.active === false ? "selected" : ""}>停止</option></select></div></div>
-  <div class="row"><div class="field"><label for="f_pd">この段階で、システムを使う前に受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div>
-  <div class="field"><label for="f_kd">危険予測</label><select id="f_kd"><option value="0" ${s.kikenDone ? "" : "selected"}>まだ</option><option value="1" ${s.kikenDone ? "selected" : ""}>受講済み</option></select></div></div>
-  <p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：システムを使う前の分 ${s.priorDone || 0}＋システムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数と危険予測は0から数え直します。</p>
+  <datalist id="dl_lic">${(CFG.licenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+  <datalist id="dl_held">${(CFG.heldLicenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+  <div class="row"><div class="field"><label for="f_nm">名前</label><input id="f_nm" value="${esc(s.name)}" autocomplete="off"></div>
+  <div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off"></div></div>
+  <div class="row"><div class="field"><label for="f_ay">年齢</label><div style="display:flex;align-items:center;gap:6px"><input id="f_ay" type="number" min="0" max="99" inputmode="numeric" value="${esc(s.ageYears ?? "")}" style="width:100%"><span style="white-space:nowrap">歳</span><input id="f_am" type="number" min="0" max="11" inputmode="numeric" value="${esc(s.ageMonths ?? "")}" style="width:100%"><span style="white-space:nowrap">ヶ月</span></div></div>
+  <div class="field"><label for="f_sx">性別</label><select id="f_sx">${opt("", s.gender, "選んでください")}${opt("男", s.gender)}${opt("女", s.gender)}</select></div></div>
+  <div class="row"><div class="field"><label for="f_lic">希望免許</label><input id="f_lic" list="dl_lic" value="${esc(s.license || "")}" autocomplete="off"></div>
+  <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
+  <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
+  <h3 style="margin-top:6px">教習の状況</h3>
+  <p style="font-size:12px;color:var(--muted);margin:0 0 8px">転校などで途中から始める人は、段階と「これまでに受けた時限数」を入れてください。</p>
+  <div class="row"><div class="field"><label for="f_st">段階</label><select id="f_st">${opt(1, s.stage, "第1段階")}${opt(2, s.stage, "第2段階")}</select></div>
+  <div class="field"><label for="f_ac">状態</label><select id="f_ac">${opt(1, s.active === false ? 0 : 1, "利用中")}${opt(0, s.active === false ? 0 : 1, "停止")}</select></div></div>
+  <div class="row"><div class="field"><label for="f_pd">この段階で、これまでに受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div>
+  <div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div></div>
+  ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数と危険予測は0から数え直します。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
   ${isNew ? "" : `<button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
@@ -116,11 +126,13 @@ document.addEventListener("click", async e => {
     else if (a === "print") { printCards(); }
     else if (a === "doPrint") window.print();
     else if (a === "save") {
+      const v = id => document.getElementById(id).value.trim();
+      const num = (id, max) => { const x = v(id); return x === "" ? null : Math.min(max, Math.max(0, Math.floor(+x))); };
       const data = {
-        studentNo: document.getElementById("f_no").value.trim(), name: document.getElementById("f_nm").value.trim(),
-        stage: +document.getElementById("f_st").value, instructorUid: S.uid,
-        deadline: document.getElementById("f_dl").value || null, active: document.getElementById("f_ac").value === "1"
+        studentNo: v("f_no"), name: v("f_nm"), stage: +v("f_st"), instructorUid: S.uid, active: v("f_ac") === "1",
+        ageYears: num("f_ay", 99), ageMonths: num("f_am", 11), gender: v("f_sx") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
       };
+      DATES.forEach(([k]) => { data[k] = v(`f_${k}`) || null; });
       if (!data.name) return toast("名前は必須です");
       data.priorDone = Math.max(0, Math.floor(+document.getElementById("f_pd").value || 0));
       data.kikenDone = document.getElementById("f_kd").value === "1";

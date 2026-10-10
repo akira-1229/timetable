@@ -159,3 +159,5 @@ select{border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font:
 .prog .bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin:8px 0 4px}
 .prog .bar i{display:block;height:100%;background:var(--green)}
 .prog .bar i.over{background:var(--orange)}
+.row>*{min-width:0}
+.field input,.field select{width:100%;min-width:0;box-sizing:border-box}
