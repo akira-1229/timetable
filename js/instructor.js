@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, DEMO } from "./common.js";
+  installButton, firstVisitInstall, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 const root = document.getElementById("app");
@@ -237,6 +237,8 @@ function render() {
     });
     h += `</div>`;
   }
+  const exp = S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days);
+  if (exp.length) h += `<div class="banner warn"><b>期限が近い教習生がいます（${CFG.expiryWarnDays || 30}日以内）</b>${exp.map(([s, e]) => `<br>${esc(s.name)}：<span style="${e.days <= 7 ? "color:var(--lv3);font-weight:700" : ""}">${esc(expiryText(e))}</span>`).join("")}</div>`;
   const ngs = S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok);
   if (ngs.length) h += `<div class="banner warn"><b>教習の順番がずれています</b>${ngs.map(([s, pl]) => `<br>${esc(s.name)}：${esc(pl.reason)}`).join("")}<br><span style="font-size:12px">欠席などで順番がずれた時に出ます。予約を入れ直してください。</span></div>`;
   const gones = S.bookings.filter(goneDraft);

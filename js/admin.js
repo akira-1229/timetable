@@ -66,9 +66,9 @@ function renderPC() {
         <button class="btn primary full" data-act="addInst">登録する</button></div></section></div>`;
   } else if (S.tab === "students") {
     const f = S.filter.trim();
-    const list = S.students.filter(s => !f || String(s.name).includes(f) || String(s.studentNo).includes(f) || iname(s.instructorUid).includes(f));
+    const list = S.students.filter(s => !f || String(s.name).includes(f) || String(s.nameKana || "").includes(f) || String(s.studentNo).includes(f) || iname(s.instructorUid).includes(f));
     const cols = [
-      { k: "studentNo", t: "番号" }, { k: "name", t: "名前" }, { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" },
+      { k: "studentNo", t: "番号" }, { k: "nameKana", t: "名前", html: s => `${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small>` }, { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" },
       { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
       { k: "deadline", t: "教習期限" }, { k: "karimenExpiry", t: "仮免期限" },
       { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
@@ -86,7 +86,7 @@ function renderPC() {
 
 function renderStudents() {
   const f = S.filter.trim();
-  const list = S.students.filter(s => !f || String(s.name).includes(f) || String(s.studentNo).includes(f) || iname(s.instructorUid).includes(f));
+  const list = S.students.filter(s => !f || String(s.name).includes(f) || String(s.nameKana || "").includes(f) || String(s.studentNo).includes(f) || iname(s.instructorUid).includes(f));
   let h = `<section class="panel"><div class="body">
   <div class="banner info">教習生の登録・編集・削除・QRカードの印刷は、各指導員の「教習生の管理」画面で行います。ここでは全員の一覧の確認と、担当の付け替え（指導員が辞める時など）ができます。</div>
   <div class="field" style="margin-top:10px"><label for="flt">絞り込み（名前・番号・担当）</label><input id="flt" value="${esc(S.filter)}"></div>

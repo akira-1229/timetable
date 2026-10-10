@@ -3,6 +3,7 @@
  *
  * ・processOutbox：5分おきに起動。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
  * ・dailyReminder：毎朝起動。締切の数日前と前日に、次月分が未入力の教習生だけに通知する
+ *                  あわせて、教習期限・仮免期限が近い教習生を担当指導員に通知する
  *
  * 必要なスクリプトプロパティ（プロジェクトの設定 → スクリプト プロパティ）
  *   PROJECT_ID   … FirebaseのプロジェクトID
@@ -11,6 +12,7 @@
  *   APP_URL      … GitHub Pagesの公開URL（最後に / を付ける）
  *   DEADLINE_DAY … 次月分の入力締切日（例：20）
  *   REMIND_DAYS  … 締切の何日前に知らせるか（カンマ区切り。例：3,1）
+ *   EXPIRY_ALERT_DAYS … 教習期限・仮免期限の何日前に指導員へ知らせるか（カンマ区切り。省略時 30,14,7,3,1,0。0は当日）
  *
  * ※ 秘密鍵はGitHubなど外部に絶対に置かないこと
  */
@@ -145,8 +147,12 @@ function processOutbox() {
   } finally { lock.releaseLock(); }
 }
 
-/* ---------- 毎朝：締切前のお知らせ ---------- */
+/* ---------- 毎朝：締切前のお知らせ・期限が近い教習生のお知らせ ---------- */
 function dailyReminder() {
+  try { inputReminder_(); } catch (e) { Logger.log('締切のお知らせでエラー: ' + e); }
+  try { expiryAlert_(); } catch (e) { Logger.log('期限のお知らせでエラー: ' + e); }
+}
+function inputReminder_() {
   const now = new Date(Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy/MM/dd"));
   const deadline = Number(prop('DEADLINE_DAY') || 20);
   const before = String(prop('REMIND_DAYS') || '3,1').split(',').map(Number);
@@ -169,6 +175,33 @@ function dailyReminder() {
       `${appUrl}student.html?t=${encodeURIComponent(tok)}`) ? 1 : 0;
   });
   Logger.log(`締切のお知らせ：${n}人に送信`);
+}
+// 教習期限（deadline）・仮免期限（karimenExpiry）が、決まった日数前になった教習生を、担当指導員ごとにまとめて知らせる
+function expiryAlert_() {
+  const now = new Date(Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy/MM/dd"));
+  const alertDays = String(prop('EXPIRY_ALERT_DAYS') || '30,14,7,3,1,0').split(',').map(Number);
+  const students = query_({
+    from: [{ collectionId: 'students' }],
+    where: { fieldFilter: { field: { fieldPath: 'active' }, op: 'EQUAL', value: { booleanValue: true } } }
+  });
+  const byInst = {};
+  students.forEach(st => {
+    const s = st.data;
+    [['deadline', '教習期限'], ['karimenExpiry', '仮免期限']].forEach(([k, label]) => {
+      if (!s[k]) return;
+      const p = String(s[k]).split('-').map(Number), d = new Date(p[0], p[1] - 1, p[2]);
+      const left = Math.round((d - now) / 86400000);
+      if (alertDays.indexOf(left) < 0) return;
+      (byInst[s.instructorUid] = byInst[s.instructorUid] || []).push(`${s.name}（${label} ${p[1]}月${p[2]}日・${left === 0 ? '今日まで' : 'あと' + left + '日'}）`);
+    });
+  });
+  const appUrl = prop('APP_URL'); let n = 0;
+  Object.keys(byInst).forEach(uid => {
+    const path = `instructors/${uid}`, t = getDoc_(path); if (!t) return;
+    const list = byInst[uid];
+    n += deliver_(path, t.fcmTokens, `期限が近い教習生が${list.length}件あります`, list.slice(0, 5).join('、') + (list.length > 5 ? ` ほか${list.length - 5}件` : ''), `${appUrl}manage.html`) ? 1 : 0;
+  });
+  Logger.log(`期限のお知らせ：指導員${n}人に送信`);
 }
 
 /* ---------- 動作確認用：自分の端末にテスト通知 ---------- */

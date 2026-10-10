@@ -3,7 +3,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 const root = document.getElementById("app");
@@ -47,18 +47,21 @@ function render() {
   h += renderStudents();
   root.innerHTML = h + `<p class="center noprint">${viewToggle()}</p>`;
 }
-const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => !f || String(s.name).includes(f) || String(s.studentNo).includes(f) || String(s.license || "").includes(f)); };
+const match = (s, f) => !f || String(s.name).includes(f) || String(s.nameKana || "").includes(toKatakana(f)) || String(s.studentNo).includes(f) || String(s.license || "").includes(f);
+const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => match(s, f)); };
+// 期限が近い・過ぎた日付は赤で出す
+const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); return s[k] ? `<span style="${e ? "color:var(--lv3);font-weight:700" : ""}" title="${e ? esc(expiryText(e)) : ""}">${esc(s[k])}</span>` : ""; };
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
 function renderPC() {
   const list = filtered();
   const cols = [
     { t: `<input type="checkbox" data-act="selPage" aria-label="表示中を全選択" ${list.length && list.every(s => S.sel.has(s.token)) ? "checked" : ""}>`, html: s => `<input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">` },
-    { k: "studentNo", t: "番号" }, { k: "name", t: "名前" },
+    { k: "studentNo", t: "番号" }, { k: "nameKana", t: "名前", html: s => `${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small>` },
     { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 }, { k: "gender", t: "性別" },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
     { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
-    { k: "startDate", t: "教習開始" }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限" },
-    { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限" },
+    { k: "startDate", t: "教習開始" }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
+    { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限", html: s => dateCell(s, "karimenExpiry") },
     { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
     { t: "", html: s => `<button class="btn" data-act="edit" data-s="${s.token}">編集</button>` }
   ];
@@ -74,13 +77,13 @@ function renderPC() {
 
 function renderStudents() {
   const f = S.filter.trim();
-  const list = S.students.filter(s => !f || String(s.name).includes(f) || String(s.studentNo).includes(f));
+  const list = S.students.filter(s => match(s, f));
   let h = `<section class="panel noprint"><div class="body">
   <div class="tools" style="grid-template-columns:1fr 1fr 1fr"><button class="btn primary" data-act="new">教習生を追加</button><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button><button class="btn" data-act="selAll">表示中を全選択</button></div>
   <div class="field" style="margin-top:10px"><label for="flt">絞り込み（名前・番号）</label><input id="flt" value="${esc(S.filter)}"></div>
   <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>希望免許</th><th>進み具合</th><th>教習期限</th><th>仮免期限</th><th>状態</th><th></th></tr></thead><tbody>`;
   list.forEach(s => {
-    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}</td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage)}</td><td>${esc(s.deadline || "")}</td><td>${esc(s.karimenExpiry || "")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td><td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
+    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage)}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td><td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
   });
   h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   h += `<div id="printArea"></div>`;
@@ -95,13 +98,14 @@ function editSheet(s) {
   sheet(`<h3>${isNew ? "教習生を追加" : "教習生を編集"}</h3>
   <datalist id="dl_lic">${(CFG.licenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
   <datalist id="dl_held">${(CFG.heldLicenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
-  <div class="row"><div class="field"><label for="f_nm">名前</label><input id="f_nm" value="${esc(s.name)}" autocomplete="off"></div>
-  <div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off"></div></div>
+  <div class="row"><div class="field"><label for="f_nm">名前（漢字）<span style="color:var(--lv3)">＊必須</span></label><input id="f_nm" value="${esc(s.name)}" autocomplete="off" placeholder="例：山田 太郎"></div>
+  <div class="field"><label for="f_kana">フリガナ<span style="color:var(--lv3)">＊必須</span></label><input id="f_kana" value="${esc(s.nameKana || "")}" autocomplete="off" placeholder="例：ヤマダ タロウ"></div></div>
+  <div class="row"><div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off"></div><div></div></div>
   <div class="row"><div class="field"><label for="f_birth">生年月日</label><input id="f_birth" type="date" value="${esc(s.birthDate || "")}"><span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
   <div class="field"><label for="f_sx">性別</label><select id="f_sx">${opt("", s.gender, "選んでください")}${opt("男", s.gender)}${opt("女", s.gender)}</select></div></div>
   <div class="row"><div class="field"><label for="f_lic">希望免許</label><input id="f_lic" list="dl_lic" value="${esc(s.license || "")}" autocomplete="off"></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
-  <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
+  <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : ""}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
   <h3 style="margin-top:6px">教習の状況</h3>
   <p style="font-size:12px;color:var(--muted);margin:0 0 8px">転校などで途中から始める人は、段階と「これまでに受けた時限数」を入れてください。</p>
   <div class="row"><div class="field"><label for="f_st">段階</label><select id="f_st">${opt(1, s.stage, "第1段階")}${opt(2, s.stage, "第2段階")}</select></div>
@@ -139,6 +143,7 @@ function printCards() {
 }
 
 document.addEventListener("input", e => {
+  if (e.target.id === "f_karimenIssued") { const x = document.getElementById("f_karimenExpiry"); if (x) x.value = karimenExpiryOf(e.target.value); return; }
   if (e.target.id === "f_birth") { const el = document.getElementById("f_age"); if (el) el.textContent = e.target.value ? `今日時点で ${ageText(e.target.value)}` : ""; return; }
   if (e.target.id === "flt") { S.filter = e.target.value; const pos = e.target.selectionStart; render(); const f = document.getElementById("flt"); f.focus(); f.setSelectionRange(pos, pos); } });
 document.addEventListener("change", e => {
@@ -161,11 +166,13 @@ document.addEventListener("click", async e => {
       const v = id => document.getElementById(id).value.trim();
       const num = (id, max) => { const x = v(id); return x === "" ? null : Math.min(max, Math.max(0, Math.floor(+x))); };
       const data = {
-        studentNo: v("f_no"), name: v("f_nm"), stage: +v("f_st"), instructorUid: S.uid, active: v("f_ac") === "1",
+        studentNo: v("f_no"), name: v("f_nm").replace(/\s+/g, " "), nameKana: toKatakana(v("f_kana")), stage: +v("f_st"), instructorUid: S.uid, active: v("f_ac") === "1",
         birthDate: v("f_birth") || null, gender: v("f_sx") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
       };
       DATES.forEach(([k]) => { data[k] = v(`f_${k}`) || null; });
-      if (!data.name) return toast("名前は必須です");
+      if (!data.name) return toast("名前（漢字）を入れてください");
+      if (!data.nameKana) return toast("フリガナを入れてください");
+      if (!isKatakana(data.nameKana)) return toast("フリガナはカタカナで入れてください（ひらがなは自動でカタカナになります）");
       data.priorDone = Math.max(0, Math.floor(+document.getElementById("f_pd").value || 0));
       data.kikenDone = document.getElementById("f_kd").value === "1";
       const old = t.dataset.s ? S.students.find(x => x.token === t.dataset.s) : null;

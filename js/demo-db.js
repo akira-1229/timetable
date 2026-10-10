@@ -3,7 +3,7 @@
 // ・見本データ入り。このブラウザの中だけに保存される（他の端末とは共有されない）
 // ・config.js の demo を false にすると使われなくなる
 // =============================================================
-const KEY = "timetable_demo_db_v3";
+const KEY = "timetable_demo_db_v4";
 const SKEY = "timetable_demo_user";
 
 export class Timestamp {
@@ -32,10 +32,10 @@ export const DEMO_USERS = {
 };
 // 教習生4人：山田・高井は熊崎指導員、島田・飯田は遠山指導員の担当
 export const DEMO_STUDENTS = [
-  { tok: "t-yamada", name: "山田", stage: 1, instructorUid: "DEMO_T1" },
-  { tok: "t-takai", name: "高井", stage: 2, instructorUid: "DEMO_T1" },
-  { tok: "t-shimada", name: "島田", stage: 1, instructorUid: "DEMO_T2" },
-  { tok: "t-iida", name: "飯田", stage: 2, instructorUid: "DEMO_T2" }
+  { tok: "t-yamada", name: "山田", kana: "ヤマダ", stage: 1, instructorUid: "DEMO_T1" },
+  { tok: "t-takai", name: "高井", kana: "タカイ", stage: 2, instructorUid: "DEMO_T1" },
+  { tok: "t-shimada", name: "島田", kana: "シマダ", stage: 1, instructorUid: "DEMO_T2" },
+  { tok: "t-iida", name: "飯田", kana: "イイダ", stage: 2, instructorUid: "DEMO_T2" }
 ];
 const pad = n => String(n).padStart(2, "0");
 function seed() {
@@ -47,7 +47,7 @@ function seed() {
   DEMO_STUDENTS.forEach((st, i) => {
     const dl = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30 + i * 25);
     DB.set(`students/${st.tok}`, {
-      studentNo: `${pad(i + 1)}`, name: st.name, stage: st.stage, instructorUid: st.instructorUid,
+      studentNo: `${pad(i + 1)}`, name: st.name, nameKana: st.kana, stage: st.stage, instructorUid: st.instructorUid,
       deadline: `${dl.getFullYear()}-${pad(dl.getMonth() + 1)}-${pad(dl.getDate())}`, active: true
     });
     const evening = i % 2 === 1;           // 平日は夕方以降しか来られない人

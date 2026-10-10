@@ -68,7 +68,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
 | `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone`。登録フォームの項目：`birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, `gender`, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, `gender`, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
 | `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
@@ -87,6 +87,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 7. 進み具合：受講済み＝`priorDone`＋`doneCount`。未チェックの予約を日時順に並べて「何時限目か」を付ける（`common.js` の `lessonPlan`）。教習生画面の「予約・進み具合」タブと、指導員画面・管理画面に表示。段階を変えると0から数え直す
 8. 教習生は通知を見たら「確認しました」。`lastNotifiedAt > ackAt` の人を指導員画面に未確認として出し、手動で再通知できる
 9. 毎朝9時、締切の3日前と前日に、次月分が未入力の教習生だけへ通知（Apps Script）
+10. 教習期限・仮免期限：30日以内に迫った教習生は指導員画面に表示し、管理画面の一覧で赤字（`expiryWarnDays`）。毎朝9時、期限の30・14・7・3・1日前と当日に担当指導員へ通知（Apps Script の `EXPIRY_ALERT_DAYS`）
 
 ## 割り当てルール（確定済み。`config.js` と `instructor.js` の `evaluate` / `evaluatePair`）
 
@@ -137,7 +138,7 @@ Firebase の準備ができたら `demo: false` にして Firebase の値を入�
 - [ ] 第1段階の連続2時限に制限があるか（今は制限なし）
 - [ ] 指導員が「確定」する期限
 - [ ] 高速教習も「ちょうど13時限目から」に縛るか（今は危険予測だけ番号を見ている）
-- [ ] 希望免許・所持免許の候補（`licenseTypes`・`heldLicenseTypes` は仮）。仮免期限日を交付日から自動で入れるか
+- [ ] 希望免許・所持免許の候補（`licenseTypes`・`heldLicenseTypes` は仮）。仮免期限日の自動計算（6ヶ月後の前日）が学園の扱いと合っているか
 
 ## 今後やること（候補）
 

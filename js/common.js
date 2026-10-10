@@ -69,6 +69,28 @@ export function ageOf(birth, on = today()) {
 }
 export const ageText = birth => { const a = ageOf(birth); return a ? `${a.y}歳${a.m}ヶ月` : ""; };
 
+// 仮免期限日：交付日の「○ヶ月後の同じ日」の前日（同じ日が無い月はその月の末日）
+export function karimenExpiryOf(issued, months = CFG.karimenMonths || 6) {
+  if (!issued) return "";
+  const d = parseDate(issued), y = d.getFullYear(), m = d.getMonth() + months, last = new Date(y, m + 1, 0).getDate();
+  const e = d.getDate() > last ? new Date(y, m, last) : addDays(new Date(y, m, d.getDate()), -1);
+  return dateStr(e);
+}
+// 教習期限・仮免期限が近い（または過ぎた）もの。days：あと何日（マイナスは過ぎた日数）
+export function expiriesOf(st, within = CFG.expiryWarnDays || 30) {
+  const t = today(), out = [];
+  [["deadline", "教習期限"], ["karimenExpiry", "仮免期限"]].forEach(([k, label]) => {
+    if (!st[k]) return;
+    const days = Math.round((parseDate(st[k]) - t) / 86400000);
+    if (days <= within) out.push({ key: k, label, date: st[k], days });
+  });
+  return out;
+}
+export const expiryText = e => `${e.label} ${md(e.date)}（${e.days < 0 ? `${-e.days}日過ぎています` : e.days === 0 ? "今日まで" : `あと${e.days}日`}）`;
+// フリガナ：ひらがなはカタカナに直す。カタカナ・長音・空白・中点だけを受け付ける
+export const toKatakana = s => String(s || "").replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)).replace(/\s+/g, " ").trim();
+export const isKatakana = s => /^[\u30A1-\u30FA\u30FC\u30FB 　]+$/.test(s);
+
 /* ---------- 画面の小物 ---------- */
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
