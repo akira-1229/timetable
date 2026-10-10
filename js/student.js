@@ -122,7 +122,7 @@ function renderBook() {
   else {
     h += `<h3 style="margin-top:0">これからの予約</h3><div class="list">`;
     up.forEach(b => {
-      h += `<div class="item"><div><div class="t">${label(b.date, b.period)}</div><div class="s">${P[b.period][0]}〜${P[b.period][1]}${b.lessonType === "kiken" ? `・${esc((CFG.kiken || {}).label || "危険予測")}` : b.highway ? "・高速教習" : ""}</div></div>${b.cancelRequested ? '<span class="tag wait">キャンセル希望中</span>' : ""}</div>`;
+      h += `<div class="item"><div><div class="t">${label(b.date, b.period)}</div><div class="s">${P[b.period][0]}〜${P[b.period][1]}${b.lessonType === "kiken" ? `・${esc((CFG.kiken || {}).label || "危険予測")}` : b.lessonType === "hwSolo" ? `・${esc((CFG.hwSolo || {}).label || "単独高速")}` : b.highway ? "・高速教習" : ""}</div></div>${b.cancelRequested ? '<span class="tag wait">キャンセル希望中</span>' : ""}</div>`;
     });
     h += `</div>`;
   }
@@ -203,7 +203,7 @@ document.addEventListener("click", async e => {
   }
   else if (a === "locked") {
     const b = S.bookings.find(x => x.id === t.dataset.id);
-    sheet(`<h3>この枠は予約済みです</h3><p>${label(b.date, b.period)}（${P[b.period][0]}〜）${b.lessonType === "kiken" ? `<br>${esc((CFG.kiken || {}).label || "危険予測")}（2時限連続のため、キャンセルは2時限まとめてになります）` : ""}<br><span style="color:var(--muted);font-size:13px">予約済みの枠は、この画面からは外せません。</span></p>
+    sheet(`<h3>この枠は予約済みです</h3><p>${label(b.date, b.period)}（${P[b.period][0]}〜）${b.pairId ? `<br>${esc(b.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : (CFG.kiken || {}).label || "危険予測")}（2時限連続のため、キャンセルは2時限まとめてになります）` : ""}<br><span style="color:var(--muted);font-size:13px">予約済みの枠は、この画面からは外せません。</span></p>
       ${b.cancelRequested ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div><button class="btn full" data-act="close">閉じる</button>'
         : `<div class="list"><button class="btn accent full" data-act="reqCancel" data-id="${b.id}">キャンセル希望を送る</button><a class="btn full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`}`);
   }

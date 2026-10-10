@@ -12,7 +12,7 @@ import {
 const auth = getAuth(fbApp);
 const root = document.getElementById("app");
 const S = {
-  uid: null, me: null, week: addDays(mondayOf(today()), 7), mode: "slot", pick: null, kiken: false,
+  uid: null, me: null, week: addDays(mondayOf(today()), 7), mode: "slot", pick: null, ptype: null,
   students: [], avail: {}, late: {}, bookings: [], confirmed: false, cancelReqs: [], loading: false
 };
 const wid = () => dateStr(S.week);
@@ -127,6 +127,8 @@ function evaluate(s, ds, p) {
       const brk = CFG.breakAfter || [];
       const linked = (x, y) => y === x + 1 && !brk.includes(x);   // 休みをはさまずに続いているか
       if (linked(tri[0], tri[1]) && linked(tri[1], tri[2])) {
+        if (S.bookings.some(b => b.token === s.token && b.date === ds && b.pairId && tri.includes(b.period)))
+          return { ok: false, reason: `ほかの予約と合わせて連続3時限（${tri.join("・")}限）になります` };
         if (!(CFG.highwaySets || []).some(set => sameSet(set, tri)))
           return { ok: false, reason: `連続3時限（${tri.join("・")}限）は入れられません。高速教習は ${(CFG.highwaySets || []).map(x => x.join("・")).join(" / ")} 限のみです` };
         const dark = inDarkSeason(ds) && ((CFG.darkSeason || {}).sets || []).some(set => sameSet(set, tri));
@@ -138,27 +140,47 @@ function evaluate(s, ds, p) {
 }
 const canBook = (s, ds, p) => evaluate(s, ds, p).ok !== false;
 
-/* ---------- 危険予測（2時限連続） ---------- */
+/* ---------- 2時限連続の教習（危険予測・単独高速） ---------- */
+// type は "kiken"（危険予測）か "hwSolo"（単独高速）
 const KK = () => CFG.kiken || { label: "危険予測", noPairAfter: [] };
-const pairOk = a => a >= 1 && a + 1 <= 10 && !KK().noPairAfter.includes(a);     // a限と a+1限が休憩をはさまずに続くか
-const pairsWith = p => [p - 1, p].filter(pairOk);                                // p限を含む2時限連続の候補（開始時限）
-function evaluatePair(s, ds, a) {
-  if (!pairOk(a)) return { ok: false, reason: `${a}・${a + 1}限は休憩をはさむため、${KK().label}は入れられません` };
+const PT = type => type === "hwSolo" ? (CFG.hwSolo || { label: "単独高速", noPairAfter: [3] }) : KK();
+const pairOk = (a, type = "kiken") => a >= 1 && a + 1 <= 10 && !PT(type).noPairAfter.includes(a);   // a限と a+1限を続けて入れられるか
+const pairsWith = (p, type = "kiken") => [p - 1, p].filter(a => pairOk(a, type));                     // p限を含む2時限連続の候補（開始時限）
+// 危険予測→単独高速の決まった組（例：危険予測4・5限→単独高速6・7限）になっているか
+function isCombo(list) {
+  if (list.length !== 4) return false;
+  const at = (type, a) => list.some(x => x.type === type && x.period === a) && list.some(x => x.type === type && x.period === a + 1);
+  return (CFG.pairCombos || []).some(c => at("kiken", c.kiken) && at("hwSolo", c.hwSolo));
+}
+//   ok:true（dark:true は日没が早い期間の警告付き）／ok:false（reason に理由）
+function evaluatePair(s, ds, a, type = "kiken") {
+  const L = PT(type).label;
+  if (!pairOk(a, type)) return { ok: false, reason: `${a}・${a + 1}限は休憩をはさむため、${L}は入れられません` };
   for (const q of [a, a + 1]) {
     if (!isFree(s.token, ds, q)) return { ok: false, reason: `${q}限が空いていません` };
     if (bookAt(ds, q)) return { ok: false, reason: `${q}限はすでに予約が入っています` };
   }
-  if (dayCount(s.token, ds) + 2 > dayMax(s)) return { ok: false, reason: `1日の上限（${dayMax(s)}時限）を超えます` };
-  if ((CFG.noTripleStages || []).includes(s.stage)) {
-    const brk = CFG.breakAfter || [];
-    const linked = (x, y) => y === x + 1 && !brk.includes(x);
-    const ps = [...dayPeriods(s.token, ds), a, a + 1].sort((x, y) => x - y);
-    for (let i = 0; i + 2 < ps.length; i++) if (linked(ps[i], ps[i + 1]) && linked(ps[i + 1], ps[i + 2]))
-      return { ok: false, reason: `ほかの予約と合わせて連続3時限（${ps.slice(i, i + 3).join("・")}限）になります` };
+  const mine = S.bookings.filter(b => b.token === s.token && b.date === ds);
+  const list = [...mine.map(b => ({ period: b.period, type: b.lessonType || "" })), { period: a, type }, { period: a + 1, type }];
+  const combo = isCombo(list);
+  if (!combo) {
+    // 単独高速→危険予測の順に続けるのは不可（危険予測→単独高速の順のみ）
+    const other = type === "kiken" ? "hwSolo" : "kiken";
+    const before = type === "kiken" ? a - 1 : a + 2, near = mine.find(b => b.period === before && b.lessonType === other);
+    if (near) return { ok: false, reason: `${PT("hwSolo").label}のすぐ後に${KK().label}は入れられません（${KK().label}→${PT("hwSolo").label}の順で、決まった時限のみ）` };
+    if (list.length > dayMax(s)) return { ok: false, reason: `1日の上限（${dayMax(s)}時限）を超えます` };
+    if ((CFG.noTripleStages || []).includes(s.stage)) {
+      const brk = CFG.breakAfter || [];
+      const linked = (x, y) => y === x + 1 && !brk.includes(x);
+      const ps = list.map(x => x.period).sort((x, y) => x - y);
+      for (let i = 0; i + 2 < ps.length; i++) if (linked(ps[i], ps[i + 1]) && linked(ps[i + 1], ps[i + 2]))
+        return { ok: false, reason: `ほかの予約と合わせて連続3時限（${ps.slice(i, i + 3).join("・")}限）になります` };
+    }
   }
-  return { ok: true };
+  const dark = type === "hwSolo" && inDarkSeason(ds) && ((CFG.darkSeason || {}).hwSoloSets || []).some(set => sameSet(set, [a, a + 1]));
+  return { ok: true, dark, combo };
 }
-const typeName = b => b.lessonType === "kiken" ? KK().label : b.highway ? "高速教習" : "";
+const typeName = b => b.lessonType ? PT(b.lessonType).label : b.highway ? "高速教習" : "";
 const blabel = b => label(b.date, b.period) + (typeName(b) ? `（${typeName(b)}）` : "");
 const freeCount = s => { let n = 0; days().forEach(ds => { for (let p = 1; p <= 10; p++) if (isFree(s.token, ds, p)) n++; }); return n; };
 const candidates = (ds, p) => S.students.filter(s => isFree(s.token, ds, p)).sort((a, b) => weekCount(a.token) - weekCount(b.token) || String(a.deadline || "9").localeCompare(String(b.deadline || "9")));
@@ -196,8 +218,8 @@ function render() {
   const pk = S.mode === "student" && S.pick ? ST(S.pick) : null;
   if (S.mode === "student") {
     h += pk ? `<div class="picking"><span><b>${esc(pk.name)}</b>を割り当て中<br><span style="font-size:12px;color:var(--muted)">光っている枠をタップすると予約されます（第${pk.stage}段階・1日${dayMax(pk)}時限まで${(CFG.noTripleStages || []).includes(pk.stage) ? "・連続3時限は高速教習のみ" : ""}）</span></span><button class="btn" data-act="unpick">やめる</button></div>
-      <div class="seg" role="group" aria-label="教習の種類"><button aria-pressed="${!S.kiken}" data-act="kiken" data-v="0">通常の教習</button><button aria-pressed="${S.kiken}" data-act="kiken" data-v="1">${KK().label}（2時限連続）</button></div>
-      ${S.kiken ? `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">光っているマスは開始の時限です。タップすると、その時限と次の時限の2つがまとめて入ります。</div>` : ""}`
+      <div class="seg" role="group" aria-label="教習の種類"><button aria-pressed="${!S.ptype}" data-act="ptype" data-v="">通常</button><button aria-pressed="${S.ptype === "kiken"}" data-act="ptype" data-v="kiken">${KK().label}</button><button aria-pressed="${S.ptype === "hwSolo"}" data-act="ptype" data-v="hwSolo">${PT("hwSolo").label}</button></div>
+      ${S.ptype ? `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">${PT(S.ptype).label}は2時限連続です。光っているマスは開始の時限で、タップするとその時限と次の時限の2つがまとめて入ります。</div>` : ""}`
       : `<div class="banner info">下の一覧から教習生を選ぶと、その人が空いている枠だけが光ります。</div>`;
   } else {
     h += `<div class="heatleg"><span><i style="background:var(--lv1-soft);border-color:var(--lv1)"></i>少ない（${T1}人以下）</span><span><i style="background:var(--lv2-soft);border-color:var(--lv2)"></i>中間（${T1 + 1}〜${T2}人）</span><span><i style="background:var(--lv3-soft);border-color:var(--lv3)"></i>多い（${T2 + 1}人以上）</span></div>
@@ -213,10 +235,10 @@ function render() {
       if (b) {
         const s = ST(b.token);
         const gone = goneDraft(b);
-        h += `<td><button class="wc bk ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(s ? s.name : "")}${gone ? " 教習生が空き時間を取り消しました" : ""}">${esc(s ? shortName(s) : "?")}<small>${gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType === "kiken" ? KK().label : b.highway ? "高速" : b.status === "draft" ? "未確定" : "通知済み"}</small></button></td>`;
-      } else if (pk && S.kiken) {
-        const ok = evaluatePair(pk, d, p).ok;
-        h += `<td><button class="wc ${ok ? "cand kk" : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}"` : "disabled"} aria-label="${lb}${ok ? `から${KK().label}で割り当て可` : ""}">${ok ? `${p}・${p + 1}<small>${KK().label}</small>` : ""}</button></td>`;
+        h += `<td><button class="wc bk ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(s ? s.name : "")}${gone ? " 教習生が空き時間を取り消しました" : ""}">${esc(s ? shortName(s) : "?")}<small>${gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : "通知済み"}</small></button></td>`;
+      } else if (pk && S.ptype) {
+        const ev = evaluatePair(pk, d, p, S.ptype), ok = ev.ok, L = PT(S.ptype).label;
+        h += `<td><button class="wc ${ok ? `cand ${S.ptype === "kiken" ? "kk" : "hw"}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${p}・${p + 1}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
       } else if (pk) {
         const ev = evaluate(pk, d, p); const ok = ev.ok !== false;
         const mark = ev.ok === "hw" ? (ev.dark ? "高速<small>要確認</small>" : "高速") : "◯";
@@ -258,8 +280,8 @@ function render() {
 }
 
 function slotSheet(ds, p, type = "normal", start) {
-  const seg = `<div class="seg" role="group" aria-label="教習の種類"><button aria-pressed="${type === "normal"}" data-act="sheetType" data-v="normal" data-d="${ds}" data-p="${p}">通常の教習</button><button aria-pressed="${type === "kiken"}" data-act="sheetType" data-v="kiken" data-d="${ds}" data-p="${p}">${KK().label}（2時限連続）</button></div>`;
-  if (type === "kiken") return kikenSheet(ds, p, start, seg);
+  const seg = `<div class="seg" role="group" aria-label="教習の種類">${[["normal", "通常"], ["kiken", KK().label], ["hwSolo", PT("hwSolo").label]].map(([v, t]) => `<button aria-pressed="${type === v}" data-act="sheetType" data-v="${v}" data-d="${ds}" data-p="${p}">${t}</button>`).join("")}</div>`;
+  if (type !== "normal") return pairSheet(ds, p, start, seg, type);
   const c = candidates(ds, p);
   let h = `<h3>${label(ds, p)}（${P[p][0]}〜）<br><span style="font-size:13px;font-weight:400;color:var(--muted)">入れる教習生 ${c.length}人・予約の少ない順</span></h3>${seg}<div class="list">`;
   c.forEach(s => {
@@ -273,21 +295,24 @@ function slotSheet(ds, p, type = "normal", start) {
   sheet(h + `</div><button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);
 }
 
-function kikenSheet(ds, p, start, seg) {
-  const pairs = pairsWith(p);
-  let h = `<h3>${md(ds)} ${KK().label}</h3>${seg}`;
+function pairSheet(ds, p, start, seg, type) {
+  const pairs = pairsWith(p, type), L = PT(type).label;
+  let h = `<h3>${md(ds)} ${L}（2時限連続）</h3>${seg}`;
   if (!pairs.length) {
-    h += `<div class="banner warn">${p}限は前後どちらも休憩をはさむため、${KK().label}（2時限連続）は入れられません。</div>`;
+    h += `<div class="banner warn">${p}限は前後どちらも休憩をはさむため、${L}（2時限連続）は入れられません。</div>`;
     return sheet(h + `<button class="btn full" data-act="close">閉じる</button>`);
   }
   const a = pairs.includes(start) ? start : pairs[0];
-  h += `<div class="chips" role="group" aria-label="時限" style="margin-bottom:8px">${pairs.map(x => `<button class="chip o" aria-pressed="${x === a}" data-act="pairStart" data-d="${ds}" data-p="${p}" data-v="${x}">${x}・${x + 1}限</button>`).join("")}</div>`;
+  h += `<div class="chips" role="group" aria-label="時限" style="margin-bottom:8px">${pairs.map(x => `<button class="chip o" aria-pressed="${x === a}" data-act="pairStart" data-d="${ds}" data-p="${p}" data-v="${x}" data-t="${type}">${x}・${x + 1}限</button>`).join("")}</div>`;
   const c = S.students.filter(s => isFree(s.token, ds, a) && isFree(s.token, ds, a + 1))
     .sort((x, y) => weekCount(x.token) - weekCount(y.token) || String(x.deadline || "9").localeCompare(String(y.deadline || "9")));
   h += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${a}限と${a + 1}限の両方が空いている教習生 ${c.length}人</div><div class="list">`;
   c.forEach(s => {
-    const ev = evaluatePair(s, ds, a);
-    h += `<div class="item"><div><div class="t">${esc(s.name)}</div><div class="s">${info(s)}</div>${ev.ok ? "" : `<div class="s" style="color:var(--orange)">${esc(ev.reason)}</div>`}</div><button class="btn accent" data-act="assignPair" data-s="${s.token}" data-d="${ds}" data-p="${a}" ${ev.ok ? "" : "disabled"}>${KK().label}で入れる</button></div>`;
+    const ev = evaluatePair(s, ds, a, type);
+    const note = !ev.ok ? `<div class="s" style="color:var(--orange)">${esc(ev.reason)}</div>`
+      : ev.dark ? `<div class="s" style="color:var(--orange)">日没が早い期間のため要確認</div>`
+      : ev.combo ? `<div class="s" style="color:var(--muted)">${KK().label}→${PT("hwSolo").label}の組み合わせ（この日は4時限）</div>` : "";
+    h += `<div class="item"><div><div class="t">${esc(s.name)}</div><div class="s">${info(s)}</div>${note}</div><button class="btn accent" data-act="assignPair" data-s="${s.token}" data-d="${ds}" data-p="${a}" data-t="${type}" ${ev.ok ? "" : "disabled"}>${L}で入れる</button></div>`;
   });
   if (!c.length) h += `<div class="hist"><div>両方の時限が空いている教習生はいません。</div></div>`;
   sheet(h + `</div><button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);
@@ -315,19 +340,31 @@ async function notifyStudent(tok, type, title, body) {
   await updateDoc(doc(db, "students", tok), { lastNotifiedAt: serverTimestamp() });
   const s = ST(tok); if (s) s.lastNotifiedAt = Timestamp.now();
 }
-async function assignPair(tok, ds, a) {
+function darkPairSheet(s, ds, a, type) {
+  const dk = CFG.darkSeason || {}, L = PT(type).label;
+  const fmt = k => `${+k.slice(0, 2)}月${+k.slice(3)}日`;
+  sheet(`<h3>${L}として入れますか？</h3>
+  <p>${esc(s.name)}（第${s.stage}段階）<br>${md(ds)} の <b>${a}・${a + 1}限</b></p>
+  <div class="banner warn"><b>注意：${fmt(dk.from)}〜${fmt(dk.to)}は日没が早いため、${a}・${a + 1}限の${L}は原則入れられません。</b><br>それでも入れる場合は「警告を確認して入れる」を押してください。</div>
+  <div class="list"><button class="btn accent full" data-act="assignPairForce" data-s="${s.token}" data-d="${ds}" data-p="${a}" data-t="${type}">警告を確認して入れる（強制）</button>
+  <button class="btn full" data-act="close">やめる</button></div>`);
+}
+async function assignPair(tok, ds, a, type = "kiken", force) {
   const s = ST(tok);
-  const ev = evaluatePair(s, ds, a);
+  const ev = evaluatePair(s, ds, a, type);
   if (!ev.ok) return toast(ev.reason);
+  if (ev.dark && !force) return darkPairSheet(s, ds, a, type);
+  const L = PT(type).label;
   const status = S.confirmed ? "confirmed" : "draft";
   const pairId = `${tok.slice(0, 6)}_${ds}_${a}`;
   for (const q of [a, a + 1]) {
-    const data = { instructorUid: S.uid, date: ds, period: q, weekId: wid(), status, cancelRequested: false, lessonType: "kiken", pairId, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    const data = { instructorUid: S.uid, date: ds, period: q, weekId: wid(), status, cancelRequested: false, lessonType: type, pairId, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    if (type === "hwSolo") { data.highway = true; if (ev.dark) data.forced = true; }
     const ref = await addDoc(collection(db, "students", tok, "bookings"), data);
     S.bookings.push({ id: ref.id, token: tok, ...data });
   }
-  if (S.confirmed) { await notifyStudent(tok, "added", "予約が追加されました", `${md(ds)} ${a}・${a + 1}限（${KK().label}）`); toast(`${s.name}さんに通知しました`); }
-  else toast(`${md(ds)} ${a}・${a + 1}限に${s.name}さんの${KK().label}を入れました`);
+  if (S.confirmed) { await notifyStudent(tok, "added", "予約が追加されました", `${md(ds)} ${a}・${a + 1}限（${L}）`); toast(`${s.name}さんに通知しました`); }
+  else toast(`${md(ds)} ${a}・${a + 1}限に${s.name}さんの${L}を入れました`);
   render();
 }
 
@@ -354,7 +391,7 @@ async function assign(tok, ds, p, mode) {
   render();
 }
 async function removeBooking(b, why) {
-  // 危険予測は2時限で1組。片方だけ残らないように、組ごと取り消す
+  // 危険予測・単独高速は2時限で1組。片方だけ残らないように、組ごと取り消す
   const group = b.pairId ? S.bookings.filter(x => x.pairId === b.pairId && x.token === b.token) : [b];
   if (!group.some(x => x.id === b.id)) group.push(b);
   for (const x of group) {
@@ -363,16 +400,16 @@ async function removeBooking(b, why) {
     else await updateDoc(ref, { status: "cancelled", cancelRequested: false, updatedAt: serverTimestamp() });
   }
   if (group.some(x => x.status !== "draft")) {
-    const text = b.pairId ? `${md(b.date)} ${group.map(x => x.period).sort((m, n) => m - n).join("・")}限（${KK().label}）` : blabel(b);
+    const text = b.pairId ? `${md(b.date)} ${group.map(x => x.period).sort((m, n) => m - n).join("・")}限（${typeName(b)}）` : blabel(b);
     await notifyStudent(b.token, why === "approve" ? "cancelApproved" : "removed",
       why === "approve" ? "キャンセルが承認されました" : "予約が取り消しになりました", text);
   }
   const ids = group.map(x => x.id);
   S.bookings = S.bookings.filter(x => !ids.includes(x.id));
   S.cancelReqs = S.cancelReqs.filter(x => !ids.includes(x.id));
-  if (b.highway) {
-    // 連続3時限でなくなったら、残りの時限の「高速」の記録を外す
-    for (const x of S.bookings.filter(y => y.token === b.token && y.date === b.date && y.highway)) {
+  if (b.highway && !b.pairId) {
+    // 連続3時限でなくなったら、残りの時限の「高速」の記録を外す（単独高速は対象外）
+    for (const x of S.bookings.filter(y => y.token === b.token && y.date === b.date && y.highway && !y.pairId)) {
       await updateDoc(doc(db, "students", x.token, "bookings", x.id), { highway: false, updatedAt: serverTimestamp() }); x.highway = false;
     }
   }
@@ -413,13 +450,14 @@ document.addEventListener("click", async e => {
     else if (a === "wk") { S.week = addDays(S.week, +t.dataset.v); S.pick = null; await loadWeek(); }
     else if (a === "mode") { S.mode = t.dataset.v; if (S.mode === "slot") S.pick = null; render(); }
     else if (a === "pick") { S.pick = S.pick === t.dataset.s ? null : t.dataset.s; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
-    else if (a === "unpick") { S.pick = null; S.kiken = false; render(); }
+    else if (a === "unpick") { S.pick = null; S.ptype = null; render(); }
     else if (a === "open") { slotSheet(t.dataset.d, +t.dataset.p); }
     else if (a === "assign") { t.disabled = true; closeSheet(); await assign(t.dataset.s, t.dataset.d, +t.dataset.p); }
-    else if (a === "assignPair") { t.disabled = true; closeSheet(); await assignPair(t.dataset.s, t.dataset.d, +t.dataset.p); }
+    else if (a === "assignPair") { t.disabled = true; closeSheet(); await assignPair(t.dataset.s, t.dataset.d, +t.dataset.p, t.dataset.t || "kiken"); }
+    else if (a === "assignPairForce") { t.disabled = true; closeSheet(); await assignPair(t.dataset.s, t.dataset.d, +t.dataset.p, t.dataset.t, true); }
     else if (a === "sheetType") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.v); }
-    else if (a === "pairStart") { slotSheet(t.dataset.d, +t.dataset.p, "kiken", +t.dataset.v); }
-    else if (a === "kiken") { S.kiken = t.dataset.v === "1"; render(); }
+    else if (a === "pairStart") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.t || "kiken", +t.dataset.v); }
+    else if (a === "ptype") { S.ptype = t.dataset.v || null; render(); }
     else if (a === "assignHw") { t.disabled = true; closeSheet(); await assign(t.dataset.s, t.dataset.d, +t.dataset.p, "hw"); }
     else if (a === "assignForce") { t.disabled = true; closeSheet(); await assign(t.dataset.s, t.dataset.d, +t.dataset.p, "force"); }
     else if (a === "booked") {
@@ -428,7 +466,7 @@ document.addEventListener("click", async e => {
       <div class="list"><button class="btn full" data-act="swap" data-id="${b.id}">別の教習生に変える</button><button class="btn accent full" data-act="unbook" data-id="${b.id}">この予約を取り消す</button><button class="btn full" data-act="close">閉じる</button></div>`);
     }
     else if (a === "unbook") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); toast("取り消しました"); }
-    else if (a === "swap") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); slotSheet(b.date, b.period, b.pairId ? "kiken" : "normal"); }
+    else if (a === "swap") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); slotSheet(b.date, b.period, b.lessonType || "normal"); }
     else if (a === "confirm") { t.disabled = true; await confirmWeek(); }
     else if (a === "approve") {
       const b = S.cancelReqs.find(x => x.id === t.dataset.id); t.disabled = true;
