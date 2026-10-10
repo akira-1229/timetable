@@ -3,7 +3,7 @@
  *
  * ・processOutbox：5分おきに起動。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
  * ・dailyReminder：毎朝起動。締切の数日前と前日に、次月分が未入力の教習生だけに通知する
- *                  あわせて、教習期限・仮免期限の3ヶ月前・2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
+ *                  あわせて、教習期限・仮免期限の2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
  *
  * 必要なスクリプトプロパティ（プロジェクトの設定 → スクリプト プロパティ）
  *   PROJECT_ID   … FirebaseのプロジェクトID
@@ -12,7 +12,7 @@
  *   APP_URL      … GitHub Pagesの公開URL（最後に / を付ける）
  *   DEADLINE_DAY … 次月分の入力締切日（例：20）
  *   REMIND_DAYS  … 締切の何日前に知らせるか（カンマ区切り。例：3,1）
- *   EXPIRY_ALERT … 教習期限・仮免期限のいつ知らせるか（カンマ区切り。m＝ヶ月前、w＝週間前、d＝日前。省略時 3m,2m,1m,2w）
+ *   EXPIRY_ALERT … 教習期限・仮免期限のいつ知らせるか（カンマ区切り。m＝ヶ月前、w＝週間前、d＝日前。省略時 2m,1m,2w）
  *
  * ※ 秘密鍵はGitHubなど外部に絶対に置かないこと
  */
@@ -176,11 +176,11 @@ function inputReminder_() {
   });
   Logger.log(`締切のお知らせ：${n}人に送信`);
 }
-// 教習期限（deadline）・仮免期限（karimenExpiry）の決まった時期（例：3ヶ月前・2ヶ月前・1ヶ月前・2週間前）に、
+// 教習期限（deadline）・仮免期限（karimenExpiry）の決まった時期（例：2ヶ月前・1ヶ月前・2週間前）に、
 // 教習生本人と担当指導員に知らせる。指導員には担当の分を1通にまとめる
 // 「○ヶ月前」は期限日と同じ日付の日（その月に同じ日が無い時は月末）、「○週間前」「○日前」は日数で数える
 function alertWhen_() {
-  return String(prop('EXPIRY_ALERT') || '3m,2m,1m,2w').split(',').map(x => x.trim()).filter(Boolean).map(x => {
+  return String(prop('EXPIRY_ALERT') || '2m,1m,2w').split(',').map(x => x.trim()).filter(Boolean).map(x => {
     const n = parseInt(x, 10), u = x.replace(/[0-9]/g, '');
     return { n: n, u: u, label: u === 'm' ? n + 'ヶ月前' : u === 'w' ? n + '週間前' : n + '日前' };
   });
